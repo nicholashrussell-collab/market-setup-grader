@@ -1,5 +1,5 @@
 import { fetchAlpacaBars } from "@/lib/alpaca-server";
-import { CloudBotSettings, getCloudBotSettings } from "@/lib/bot-config";
+import { CloudBotSettings, getRuntimeCloudBotSettings } from "@/lib/bot-config";
 import { supabaseRest } from "@/lib/supabase-rest";
 import { Bias, Candle, GradeResult, gradeSetup } from "@/lib/trading";
 
@@ -130,7 +130,7 @@ async function saveScanRun(settings: CloudBotSettings, candidates: CloudBotCandi
       reason,
       source: settings.source,
       timeframe: settings.timeframe,
-      universe_label: `${settings.universeLabel} · v7.6 cloud paper bot`,
+      universe_label: `${settings.universeLabel} · v7.7 autonomous cloud paper bot`,
       symbols_count: settings.symbols.length,
       candidates_count: candidates.length,
       actionable_count: actionableCount,
@@ -144,7 +144,7 @@ async function saveScanRun(settings: CloudBotSettings, candidates: CloudBotCandi
         paperOnly: true,
         cloudWorker: true,
       },
-      notes: "Saved by v7.6 scheduled cloud paper bot. No real broker orders placed.",
+      notes: "Saved by v7.7 scheduled cloud paper bot. No real broker orders placed.",
     }),
   });
   const scanRunId = rows[0]?.id;
@@ -290,7 +290,7 @@ async function openPaperTrades(settings: CloudBotSettings, candidates: CloudBotC
       position_value: size.positionValue,
       last_price: candidate.lastPrice || candidate.entry,
       unrealized_pnl: 0,
-      notes: "Opened by v7.6 cloud paper bot. No broker order was placed.",
+      notes: "Opened by v7.7 cloud paper bot. No broker order was placed.",
       raw: { candidate, shares: size.shares, riskDollars: size.riskDollars, positionValue: size.positionValue, cloudBot: true },
     };
   }).filter(Boolean);
@@ -302,7 +302,7 @@ async function openPaperTrades(settings: CloudBotSettings, candidates: CloudBotC
 }
 
 export async function runCloudPaperBot(reason = "scheduled") {
-  const settings = getCloudBotSettings();
+  const settings = await getRuntimeCloudBotSettings();
   const startedAt = new Date().toISOString();
   const market = getSimpleMarketStatus();
   if (!settings.enabled) {

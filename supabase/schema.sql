@@ -1,4 +1,4 @@
--- Market Setup Grader v7.6 cloud paper-live schema
+-- Market Setup Grader v7.7 autonomous dashboard/admin schema
 -- Safe to run multiple times in Supabase SQL Editor.
 
 create extension if not exists pgcrypto;
@@ -110,3 +110,62 @@ create table if not exists public.bot_events (
 
 create index if not exists bot_events_created_at_idx on public.bot_events (created_at desc);
 create index if not exists bot_events_type_idx on public.bot_events (event_type, created_at desc);
+
+-- v7.7 private admin/autopilot control table
+create table if not exists public.bot_control (
+  id text primary key default 'main',
+  updated_at timestamptz not null default now(),
+  bot_enabled boolean not null default true,
+  paper_trading_enabled boolean not null default false,
+  universe_label text not null default 'Super Wide 100',
+  timeframe text not null default '15Min',
+  min_score numeric not null default 80,
+  max_score numeric not null default 89,
+  min_rr numeric not null default 1,
+  max_open_positions integer not null default 4,
+  starting_equity numeric not null default 5000,
+  risk_pct numeric not null default 1,
+  max_position_pct numeric not null default 25,
+  max_stale_minutes integer not null default 30,
+  allow_stale_simulation boolean not null default false,
+  scan_limit integer not null default 120,
+  notes text
+);
+
+insert into public.bot_control (
+  id,
+  bot_enabled,
+  paper_trading_enabled,
+  universe_label,
+  timeframe,
+  min_score,
+  max_score,
+  min_rr,
+  max_open_positions,
+  starting_equity,
+  risk_pct,
+  max_position_pct,
+  max_stale_minutes,
+  allow_stale_simulation,
+  scan_limit,
+  notes
+)
+values (
+  'main',
+  true,
+  false,
+  'Super Wide 100',
+  '15Min',
+  80,
+  89,
+  1,
+  4,
+  5000,
+  1,
+  25,
+  30,
+  false,
+  120,
+  'v7.7 admin/autopilot defaults. Paper execution starts disarmed.'
+)
+on conflict (id) do nothing;

@@ -80,3 +80,81 @@ export function getCloudBotSettings(): CloudBotSettings {
     scanLimit: envNumber("BOT_SCAN_LIMIT", universeLabel === "Super Wide 500" ? 500 : 120),
   };
 }
+
+export type BotControlRow = {
+  id: string;
+  updated_at?: string;
+  bot_enabled?: boolean;
+  paper_trading_enabled?: boolean;
+  universe_label?: string;
+  timeframe?: string;
+  min_score?: number;
+  max_score?: number;
+  min_rr?: number;
+  max_open_positions?: number;
+  starting_equity?: number;
+  risk_pct?: number;
+  max_position_pct?: number;
+  max_stale_minutes?: number;
+  allow_stale_simulation?: boolean;
+  scan_limit?: number;
+  notes?: string;
+};
+
+function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): CloudBotSettings {
+  if (!row) return base;
+  const universeLabel = row.universe_label || base.universeLabel;
+  const scanLimit = Number(row.scan_limit ?? base.scanLimit);
+  return {
+    ...base,
+    enabled: typeof row.bot_enabled === "boolean" ? row.bot_enabled : base.enabled,
+    paperTradingEnabled: typeof row.paper_trading_enabled === "boolean" ? row.paper_trading_enabled : base.paperTradingEnabled,
+    universeLabel,
+    symbols: getUniverseSymbols(universeLabel).slice(0, Number.isFinite(scanLimit) ? scanLimit : base.scanLimit),
+    timeframe: (row.timeframe as Timeframe) || base.timeframe,
+    minScore: Number(row.min_score ?? base.minScore),
+    maxScore: Number(row.max_score ?? base.maxScore),
+    minRR: Number(row.min_rr ?? base.minRR),
+    maxOpenPositions: Number(row.max_open_positions ?? base.maxOpenPositions),
+    startingEquity: Number(row.starting_equity ?? base.startingEquity),
+    riskPct: Number(row.risk_pct ?? base.riskPct),
+    maxPositionPct: Number(row.max_position_pct ?? base.maxPositionPct),
+    maxStaleMinutes: Number(row.max_stale_minutes ?? base.maxStaleMinutes),
+    allowStaleSimulation: typeof row.allow_stale_simulation === "boolean" ? row.allow_stale_simulation : base.allowStaleSimulation,
+    scanLimit: Number.isFinite(scanLimit) ? scanLimit : base.scanLimit,
+  };
+}
+
+export async function getRuntimeCloudBotSettings(): Promise<CloudBotSettings> {
+  const base = getCloudBotSettings();
+  try {
+    const { getSupabaseConfigStatus, supabaseRest } = await import("@/lib/supabase-rest");
+    if (!getSupabaseConfigStatus().configured) return base;
+    const rows = await supabaseRest<BotControlRow[]>("bot_control?id=eq.main&select=*&limit=1", { method: "GET" }).catch(() => []);
+    return applyControlRow(base, rows[0]);
+  } catch {
+    return base;
+  }
+}
+
+export function defaultBotControlRow(): BotControlRow {
+  const s = getCloudBotSettings();
+  return {
+    id: "main",
+    bot_enabled: s.enabled,
+    paper_trading_enabled: false,
+    universe_label: s.universeLabel,
+    timeframe: s.timeframe,
+    min_score: s.minScore,
+    max_score: s.maxScore,
+    min_rr: s.minRR,
+    max_open_positions: s.maxOpenPositions,
+    starting_equity: s.startingEquity,
+    risk_pct: s.riskPct,
+    max_position_pct: s.maxPositionPct,
+    max_stale_minutes: s.maxStaleMinutes,
+    allow_stale_simulation: s.allowStaleSimulation,
+    scan_limit: s.scanLimit,
+    notes: "Managed from v7.7 /admin.",
+  };
+}

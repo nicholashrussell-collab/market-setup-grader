@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCloudBotSettings } from "@/lib/bot-config";
+import { getRuntimeCloudBotSettings } from "@/lib/bot-config";
 import { getSimpleMarketStatus } from "@/lib/paper-bot";
 import { getSupabaseConfigStatus, supabaseRest } from "@/lib/supabase-rest";
 
@@ -11,7 +11,7 @@ type ScanRun = { id: string; created_at: string; universe_label?: string; timefr
 
 export async function GET() {
   const status = getSupabaseConfigStatus();
-  const settings = getCloudBotSettings();
+  const settings = await getRuntimeCloudBotSettings();
   const market = getSimpleMarketStatus();
   if (!status.configured) {
     return NextResponse.json({ ok: false, configured: false, message: status.message, settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe }, market });
