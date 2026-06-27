@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/bot/run?source=vercel-cron",
+      "schedule": "*/15 * * * *"
+    }
+  ]
+}

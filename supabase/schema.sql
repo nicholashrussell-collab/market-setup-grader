@@ -1,5 +1,5 @@
--- Market Setup Grader v7.3 cloud paper-live schema
--- Run this in Supabase SQL Editor once per project.
+-- Market Setup Grader v7.6 cloud paper-live schema
+-- Safe to run multiple times in Supabase SQL Editor.
 
 create extension if not exists pgcrypto;
 
@@ -64,6 +64,11 @@ create table if not exists public.paper_trades (
   target numeric,
   rr numeric,
   score numeric,
+  shares numeric,
+  risk_dollars numeric,
+  position_value numeric,
+  last_price numeric,
+  unrealized_pnl numeric,
   status text not null default 'Open',
   close_time timestamptz,
   close_price numeric,
@@ -72,6 +77,12 @@ create table if not exists public.paper_trades (
   notes text,
   raw jsonb not null default '{}'::jsonb
 );
+
+alter table public.paper_trades add column if not exists shares numeric;
+alter table public.paper_trades add column if not exists risk_dollars numeric;
+alter table public.paper_trades add column if not exists position_value numeric;
+alter table public.paper_trades add column if not exists last_price numeric;
+alter table public.paper_trades add column if not exists unrealized_pnl numeric;
 
 create index if not exists paper_trades_status_idx on public.paper_trades (status, created_at desc);
 create index if not exists paper_trades_symbol_idx on public.paper_trades (symbol, created_at desc);
@@ -89,6 +100,13 @@ create table if not exists public.symbol_quality_state (
   raw jsonb not null default '{}'::jsonb
 );
 
--- For this early version, keep row-level security off and access the tables only
--- through Vercel/Railway server-side API routes using SUPABASE_SERVICE_ROLE_KEY.
--- Do not expose the service role key in frontend code.
+create table if not exists public.bot_events (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  event_type text not null,
+  message text not null,
+  payload jsonb not null default '{}'::jsonb
+);
+
+create index if not exists bot_events_created_at_idx on public.bot_events (created_at desc);
+create index if not exists bot_events_type_idx on public.bot_events (event_type, created_at desc);

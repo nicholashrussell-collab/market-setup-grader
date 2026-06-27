@@ -80,10 +80,46 @@ type CloudRunSummary = {
   actionable_count?: number;
 };
 
+type CloudBotTrade = {
+  id: string;
+  created_at: string;
+  symbol: string;
+  bias: string;
+  status: string;
+  entry?: number;
+  stop?: number;
+  target?: number;
+  last_price?: number;
+  unrealized_pnl?: number;
+  result_dollars?: number;
+  result_r?: number;
+  notes?: string;
+};
+
+type CloudBotEvent = {
+  id: string;
+  created_at: string;
+  event_type: string;
+  message: string;
+};
+
+type CloudBotStatus = {
+  ok: boolean;
+  configured: boolean;
+  message: string;
+  market?: { isOpen: boolean; label: string; reason: string };
+  settings?: { universeLabel: string; symbols: number; timeframe: string; maxOpenPositions: number; paperTradingEnabled: boolean };
+  lastEvent?: CloudBotEvent | null;
+  events?: CloudBotEvent[];
+  openTrades?: CloudBotTrade[];
+  closedTrades?: CloudBotTrade[];
+  scans?: CloudRunSummary[];
+};
+
 const TIMEFRAMES: Timeframe[] = ["1Min", "5Min", "15Min", "30Min", "1Hour"];
-const POSITIONS_KEY = "market-setup-grader-v7-5-paper-positions";
-const ACTIVITY_KEY = "market-setup-grader-v7-5-activity";
-const SETTINGS_KEY = "market-setup-grader-v7-5-settings";
+const POSITIONS_KEY = "market-setup-grader-v7-6-paper-positions";
+const ACTIVITY_KEY = "market-setup-grader-v7-6-activity";
+const SETTINGS_KEY = "market-setup-grader-v7-6-settings";
 
 const CORE_9_SYMBOLS = "AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, SPY, QQQ";
 const SUPER_WIDE_100_SYMBOLS = "SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLY, XLV, XLI, PYPL, DIS, AAPL, NVDA, TSLA, MSFT, AMD, WMT, XOM, KO, JNJ, NFLX, JPM, GOOGL, AMZN, AVGO, COST, V, MA, LLY, UNH, HD, NKE, CRM, MCD, CAT, GE, META, ORCL, IBM, NOW, ADBE, INTU, PLTR, MU, QCOM, TXN, MRK, ABBV, TMO, PEP, SBUX, BA, GS, BAC, CVX, COP, C, MS, BLK, SCHW, AMAT, LRCX, KLAC, INTC, CSCO, PANW, CRWD, SNOW, SHOP, UBER, ABNB, BKNG, TGT, LOW, TJX, PG, CL, EL, MRNA, PFE, ISRG, DHR, CVS, WBA, DE, HON, UPS, FDX, GM, F, RTX, LMT, NOC, LIN, APD, FCX, SLB, OXY, T";
@@ -170,7 +206,7 @@ function createPosition(candidate: LiveScanCandidate, settings: { equity: number
     positionValue: Number((candidate.entry * cappedShares).toFixed(2)),
     lastPrice: candidate.lastPrice || candidate.entry,
     unrealizedPnl: 0,
-    notes: "Paper trade opened by v7.4 live dashboard. No broker order was placed.",
+    notes: "Paper trade opened by v7.6 dashboard. No broker order was placed.",
   };
 }
 
@@ -247,6 +283,9 @@ export default function Home() {
   const [activity, setActivity] = useState<string[]>([]);
   const [cloudHealth, setCloudHealth] = useState<CloudHealth | null>(null);
   const [cloudRuns, setCloudRuns] = useState<CloudRunSummary[]>([]);
+  const [cloudBot, setCloudBot] = useState<CloudBotStatus | null>(null);
+  const [isLoadingCloudBot, setIsLoadingCloudBot] = useState(false);
+  const [isRunningCloudBot, setIsRunningCloudBot] = useState(false);
   const [status, setStatus] = useState("Ready. Dashboard is paper-only; no broker orders are placed.");
   const [error, setError] = useState("");
   const [isScanning, setIsScanning] = useState(false);
@@ -467,11 +506,11 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          reason: "v7.5-live-trader-console-save",
+          reason: "v7.6-live-trader-console-save",
           source: dataSource,
           timeframe,
           mode,
-          universeLabel: `${universeLabel} · v7.5 paper execution console`,
+          universeLabel: `${universeLabel} · v7.6 paper execution console`,
           symbolsCount: symbols.length,
           startedAt: new Date().toISOString(),
           finishedAt: new Date().toISOString(),
@@ -526,6 +565,46 @@ export default function Home() {
     void checkCloudStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadCloudBotStatus = useCallback(async () => {
+    setIsLoadingCloudBot(true);
+    try {
+      const res = await fetch("/api/bot/status", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Could not load cloud bot status.");
+      setCloudBot(data);
+    } catch (err) {
+      setCloudBot({ ok: false, configured: false, message: err instanceof Error ? err.message : "Could not load cloud bot status." });
+    } finally {
+      setIsLoadingCloudBot(false);
+    }
+  }, []);
+
+  const runCloudBotOnce = useCallback(async () => {
+    setIsRunningCloudBot(true);
+    setStatus("Running one cloud bot cycle from the server...");
+    try {
+      const res = await fetch("/api/bot/run?source=dashboard-manual", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.message || "Cloud bot run failed.");
+      setStatus(data.skipped ? data.message : `Cloud bot finished: ${data.actionable || 0} actionable, ${data.openResult?.opened || 0} opened.`);
+      addActivity(data.skipped ? `Cloud bot skipped: ${data.message}` : `Cloud bot ran on server: ${data.scanned || 0} scanned, ${data.openResult?.opened || 0} paper opened.`);
+      await loadCloudBotStatus();
+      await loadRecentCloudRuns();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Cloud bot run failed.";
+      setStatus(message);
+      addActivity(message);
+    } finally {
+      setIsRunningCloudBot(false);
+    }
+  }, [addActivity, loadCloudBotStatus, loadRecentCloudRuns]);
+
+  useEffect(() => {
+    void loadCloudBotStatus();
+    const id = window.setInterval(() => void loadCloudBotStatus(), 30000);
+    return () => window.clearInterval(id);
+  }, [loadCloudBotStatus]);
 
   const openTopPaperTrades = useCallback((rows = candidates) => {
     if (!paperArmed) {
@@ -606,7 +685,7 @@ export default function Home() {
   };
 
   const resetPaperPortfolio = () => {
-    if (!window.confirm("Clear all local paper positions and activity? This does not touch cloud scan logs.")) return;
+    if (!window.confirm("Clear all local paper positions and activity? This does not touch cloud scan logs or cloud bot trades.")) return;
     setPositions([]);
     setActivity([]);
     setStatus("Local paper portfolio cleared.");
@@ -641,14 +720,18 @@ export default function Home() {
       : !actionable.length
         ? "0 executable setups"
         : `Open ${Math.min(actionable.length, Math.max(0, maxOpenPositions - openPositions.length))} paper trade(s)`;
+  const cloudBotOpenTrades = cloudBot?.openTrades || [];
+  const cloudBotEvents = cloudBot?.events || [];
+  const cloudBotLastRun = cloudBot?.lastEvent?.created_at ? formatDateTime(cloudBot.lastEvent.created_at) : "Waiting";
+  const cloudBotStateTone = cloudBot?.configured ? (cloudBot?.market?.isOpen ? "armed" : "warn") : "warn";
 
   return (
     <main className="dash-shell">
       <header className="dash-header">
         <div>
           <div className="eyebrow">Paper-live execution console</div>
-          <h1>Market Setup Grader v7.5</h1>
-          <p>Paper-live trading console: monitor the account, scan the universe, stage paper entries, track open positions, and review every bot decision. Real broker orders are still locked off.</p>
+          <h1>Market Setup Grader v7.6</h1>
+          <p>Cloud paper-live console: the scheduled worker can scan and manage paper trades even when this browser is closed. The dashboard is now mainly for watching what the bot is doing. Real broker orders are still locked off.</p>
         </div>
         <div className="dash-header-actions">
           <a className="secondary ghost-link" href="/research">Research lab</a>
@@ -669,10 +752,10 @@ export default function Home() {
           <strong>{dataFresh ? "Usable" : "Stale / market closed"}</strong>
           <small>Last candle: {lastCandleText}</small>
         </div>
-        <div className="console-state safe">
-          <span>Broker connection</span>
-          <strong>Paper only</strong>
-          <small>No real-money order route is enabled in this build.</small>
+        <div className={`console-state ${cloudBotStateTone}`}>
+          <span>Cloud worker</span>
+          <strong>{cloudBot?.configured ? "Scheduled" : "Needs setup"}</strong>
+          <small>{cloudBot?.configured ? `Last event: ${cloudBotLastRun}` : (cloudBot?.message || "Connect Supabase and redeploy.")}</small>
         </div>
         <div className="console-state">
           <span>Scan quality</span>
@@ -686,6 +769,7 @@ export default function Home() {
         <StatTile label="Open positions" value={openPositions.length} helper={`${closedPositions.length} closed paper trades`} />
         <StatTile label="Latest scan" value={candidates.length ? `${actionable.length} actionable` : "Not scanned"} helper={candidates.length ? `${candidates.length} symbols ranked` : `${symbols.length} symbols loaded`} />
         <StatTile label="Cloud DB" value={cloudHealth?.configured ? "Connected" : "Not ready"} helper={cloudHealth?.urlHost || cloudHealth?.message || "Checking..."} tone={statusTone} />
+        <StatTile label="Cloud bot" value={cloudBot?.configured ? (cloudBot?.market?.label || "Ready") : "Not ready"} helper={cloudBot?.settings ? `${cloudBot.settings.symbols} symbols · ${cloudBot.settings.timeframe}` : cloudBot?.message || "Checking..."} tone={cloudBot?.configured ? "good" : "warn"} />
       </section>
 
       <section className="dash-command-card">
@@ -721,6 +805,8 @@ export default function Home() {
           <button className="secondary" title={tradeButtonReason} onClick={() => openTopPaperTrades()} disabled={!paperArmed || !actionable.length}>{tradeButtonReason}</button>
           <button className="secondary" onClick={() => void checkOpenPositions()} disabled={isCheckingPositions || !openPositions.length}>{isCheckingPositions ? "Checking..." : "Check positions"}</button>
           <button className="secondary" onClick={() => void saveScanToCloud()} disabled={isSavingCloud || !candidates.length}>{isSavingCloud ? "Saving..." : "Save scan"}</button>
+          <button className="secondary" onClick={() => void loadCloudBotStatus()} disabled={isLoadingCloudBot}>{isLoadingCloudBot ? "Refreshing..." : "Refresh cloud bot"}</button>
+          <button className="secondary" onClick={() => void runCloudBotOnce()} disabled={isRunningCloudBot}>{isRunningCloudBot ? "Running server bot..." : "Run cloud bot once"}</button>
         </div>
         {isScanning ? <div className="scan-progress"><span style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /> <b>{progress.current}</b> {progress.done}/{progress.total}</div> : null}
         <div className="status-line">{status}</div>
@@ -810,8 +896,24 @@ export default function Home() {
             {selectedPosition ? <div className="position-note"><strong>{selectedPosition.status} paper position</strong><br />Entry {formatPrice(selectedPosition.entry)} · Last {formatPrice(selectedPosition.lastPrice)} · P/L {money((selectedPosition.realizedPnl || 0) + selectedPosition.unrealizedPnl)}</div> : null}
           </section>
 
+          <section className="dash-panel cloud-bot-panel">
+            <div className="panel-heading-row"><div><h2>Cloud bot</h2><p>Server-side worker status. This keeps running from Vercel Cron when configured.</p></div><span className="small-pill">{cloudBot?.market?.label || "—"}</span></div>
+            <div className="pill-card good"><span>Schedule</span><strong>Every 15 min</strong><small>Defined in vercel.json. Dashboard can be closed.</small></div>
+            <div className="position-list">
+              {cloudBotOpenTrades.length ? cloudBotOpenTrades.slice(0, 8).map((p) => (
+                <div key={p.id} className="position-row open" onClick={() => void fetchSymbolChart(p.symbol, "cloud trade click")}>
+                  <div><strong>{p.symbol}</strong><span>{p.bias} · cloud paper</span></div>
+                  <div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{p.last_price ? `${formatPrice(Number(p.last_price))} last` : "open"}</span></div>
+                </div>
+              )) : <p className="muted">No open cloud paper trades yet.</p>}
+            </div>
+            <div className="activity-list compact">
+              {cloudBotEvents.length ? cloudBotEvents.slice(0, 6).map((event) => <div key={event.id}>{formatDateTime(event.created_at)} · {event.message}</div>) : <p className="muted small">No cloud bot events yet. It will log here after cron/manual runs.</p>}
+            </div>
+          </section>
+
           <section className="dash-panel">
-            <div className="panel-heading-row"><div><h2>Paper portfolio</h2><p>Local paper tracker. This is not a broker account.</p></div></div>
+            <div className="panel-heading-row"><div><h2>Local paper portfolio</h2><p>Browser-only paper tracker. Cloud paper trades are shown above.</p></div></div>
             <div className="position-list">
               {positions.length ? positions.slice(0, 12).map((p) => (
                 <div key={p.id} className={`position-row ${p.status.toLowerCase()}`} onClick={() => void fetchSymbolChart(p.symbol, "position click")}>
