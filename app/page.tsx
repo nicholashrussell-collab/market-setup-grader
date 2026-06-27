@@ -181,139 +181,81 @@ export default function PublicDashboard() {
   const selectedStatus = selectedSignal ? signalStatus(selectedSignal) : "No cloud signal selected yet.";
 
   return (
-    <main className="dash-shell public-shell viewer-v78">
-      <header className="viewer-hero-grid">
-        <section className="viewer-hero-card">
-          <div className="viewer-version-row"><span className="eyebrow">Autonomous paper trading viewer</span><StatusBadge tone="info">v7.8</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
-          <h1>Market Setup Grader</h1>
-          <p>The public page is now a live viewing area. The scheduled cloud worker makes paper-only decisions, Supabase stores the record, and this dashboard shows the bot’s state without giving visitors control.</p>
-          <div className="hero-quick-row">
-            <div><span>Current rules</span><strong>{bot?.settings?.universeLabel || "Loading"}</strong><small>{bot?.settings?.symbols || 0} symbols · {bot?.settings?.timeframe || "15Min"} · {bot?.settings?.riskPct || 1}% risk</small></div>
-            <div><span>Latest bot run</span><strong>{lastBotEvent ? formatDateTime(lastBotEvent.created_at) : "Waiting"}</strong><small>{lastBotEvent?.event_type || "No event yet"}</small></div>
-            <div><span>Latest saved scan</span><strong>{latestScan ? formatDateTime(latestScan.created_at) : "None"}</strong><small>{latestScan ? cleanUniverseLabel(latestScan.universe_label) : "Cron has not saved a scan yet"}</small></div>
+    <main className="dash-shell public-shell viewer-v79">
+      <div className="terminal-workspace">
+        <aside className="viewer-sidebar" aria-label="Viewer navigation">
+          <div className="sidebar-brand">
+            <span className="brand-mark">MSG</span>
+            <div><strong>Setup Grader</strong><small>Autonomous paper viewer</small></div>
           </div>
-        </section>
-        <aside className="viewer-status-stack">
-          <Link className="ghost-link compact-link" href="/admin">Admin login</Link>
-          <Link className="ghost-link compact-link" href="/research">Research lab</Link>
-          <div className="run-state-card">
+          <nav className="sidebar-nav">
+            <a href="#overview">Overview</a><a href="#chart">Chart desk</a><a href="#signals">Signals</a><a href="#positions">Positions</a><a href="#activity">Activity</a>
+          </nav>
+          <div className="sidebar-system-card">
             <span className={`state-dot ${botEngineRunning ? "good" : "warn"}`} />
-            <div><strong>{botEngineRunning ? "Bot engine running" : "Bot engine paused"}</strong><small>{paperArmed ? "Paper entries armed from admin" : "Paper entries disarmed"}</small></div>
+            <div><strong>{botEngineRunning ? "Engine running" : "Engine paused"}</strong><small>{paperArmed ? "Paper entries armed" : "Paper entries disarmed"}</small></div>
+          </div>
+          <div className="sidebar-links">
+            <Link className="ghost-link compact-link" href="/admin">Admin login</Link>
+            <Link className="ghost-link compact-link" href="/research">Research lab</Link>
           </div>
         </aside>
-      </header>
 
-      <section className="console-topline mission-strip">
-        <div className={`console-state ${botEngineRunning ? "armed" : "warn"}`}><span>Engine</span><strong>{botEngineRunning ? "Running" : "Paused"}</strong><small>{botEngineRunning ? "Cron can run scheduled cycles." : "Cron will skip until resumed in admin."}</small></div>
-        <div className={`console-state ${paperArmed ? "armed" : "warn"}`}><span>Paper execution</span><strong>{paperArmed ? "Armed" : "Disarmed"}</strong><small>{paperArmed ? "Paper trades may open when rules pass." : "Scanning is allowed; entries are blocked."}</small></div>
-        <div className={`console-state ${marketOpen ? "armed" : "warn"}`}><span>Market</span><strong>{bot?.market?.label || "Loading"}</strong><small>{bot?.market?.reason || "Checking market guard."}</small></div>
-        <div className={`console-state ${connected ? "armed" : "warn"}`}><span>Cloud DB</span><strong>{connected ? "Connected" : "Not ready"}</strong><small>{bot?.message || latest?.message || "Supabase status"}</small></div>
-      </section>
-
-      <section className="dash-status-row">
-        <StatTile label="Paper equity" value={money(paperEquity)} helper={`${percent(returnPct)} total · ${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={paperEquity >= startingEquity ? "good" : "bad"} />
-        <StatTile label="Open cloud trades" value={openTrades.length} helper={`${closedTrades.length} recent closed trades loaded`} />
-        <StatTile label="Latest saved scan" value={`${scanStats.actionable}/${scanStats.total} actionable`} helper={`${scanStats.shown} displayed · ${scanStats.stale} shown stale/blocked`} tone={scanStats.actionable > 0 ? "good" : "warn"} />
-        <StatTile label="Share status" value="Viewer safe" helper="Visitors cannot arm, pause, clear, or change risk here." tone="good" />
-      </section>
-
-      {error ? <div className="error-box">{error}</div> : <div className="execution-note upgraded-note">{status} Last bot run and last saved scan are shown separately so market-closed skips do not look like missing scans.</div>}
-
-      <section className="dash-main-grid viewer-grid viewer-grid-v78">
-        <div className="dash-left-column">
-          <section className="dash-panel chart-panel pro-chart-panel">
-            <div className="panel-heading-row">
-              <div><h2>{selectedSymbol} chart</h2><p>{selectedGrade ? `${selectedGrade.bias} · score ${selectedGrade.score} · ${selectedGrade.setupType}` : "Click a signal, open trade, or symbol to inspect."}</p></div>
-              <div className="panel-actions-mini"><StatusBadge tone="info">Read-only</StatusBadge>{selectedSignal ? <StatusBadge tone={signalTone(selectedSignal)}>{selectedStatus}</StatusBadge> : null}</div>
+        <section className="viewer-main-area">
+          <header id="overview" className="viewer-topbar">
+            <div>
+              <div className="viewer-version-row"><span className="eyebrow">Autonomous paper trading viewer</span><StatusBadge tone="info">v7.9</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+              <h1>Market Setup Grader</h1>
+              <p>The scheduled cloud worker runs the paper bot. This page is a clean monitoring desk: viewers can watch performance, signals, and activity without changing the bot.</p>
             </div>
+            <div className="topbar-rule-card"><span>Current rules</span><strong>{bot?.settings?.universeLabel || "Loading"}</strong><small>{bot?.settings?.symbols || 0} symbols · {bot?.settings?.timeframe || "15Min"} · {bot?.settings?.riskPct || 1}% risk</small></div>
+          </header>
+
+          <section className="viewer-metrics-grid">
+            <StatTile label="Bot engine" value={botEngineRunning ? "Running" : "Paused"} helper={botEngineRunning ? "Cron can run scheduled cycles." : "Cron will skip until resumed in admin."} tone={botEngineRunning ? "good" : "warn"} />
+            <StatTile label="Paper execution" value={paperArmed ? "Armed" : "Disarmed"} helper={paperArmed ? "Paper trades may open when rules pass." : "Scanning is allowed; entries are blocked."} tone={paperArmed ? "good" : "warn"} />
+            <StatTile label="Market" value={bot?.market?.label || "Loading"} helper={bot?.market?.reason || "Checking market guard."} tone={marketOpen ? "good" : "warn"} />
+            <StatTile label="Cloud DB" value={connected ? "Connected" : "Not ready"} helper={bot?.message || latest?.message || "Supabase status"} tone={connected ? "good" : "warn"} />
+          </section>
+
+          <section className="viewer-metrics-grid secondary-metrics">
+            <StatTile label="Paper equity" value={money(paperEquity)} helper={`${percent(returnPct)} total · ${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={paperEquity >= startingEquity ? "good" : "bad"} />
+            <StatTile label="Open cloud trades" value={openTrades.length} helper={`${closedTrades.length} recent closed trades loaded`} />
+            <StatTile label="Latest bot run" value={lastBotEvent ? formatDateTime(lastBotEvent.created_at) : "Waiting"} helper={lastBotEvent?.event_type || "No event yet"} />
+            <StatTile label="Latest saved scan" value={`${scanStats.actionable}/${scanStats.total} actionable`} helper={`${signals.length} displayed · ${scanStats.stale} shown stale/blocked`} tone={scanStats.actionable > 0 ? "good" : "warn"} />
+          </section>
+
+          {error ? <div className="error-box">{error}</div> : <div className="execution-note upgraded-note">{status} Last bot run and last saved scan are shown separately so market-closed skips do not look like missing scans.</div>}
+
+          <section id="chart" className="dash-panel chart-panel pro-chart-panel clean-chart-card">
+            <div className="panel-heading-row"><div><h2>{selectedSymbol} chart</h2><p>{selectedGrade ? `${selectedGrade.bias} · score ${selectedGrade.score} · ${selectedGrade.setupType}` : "Click a signal, open trade, or symbol to inspect."}</p></div><div className="panel-actions-mini"><StatusBadge tone="info">Read-only</StatusBadge>{selectedSignal ? <StatusBadge tone={signalTone(selectedSignal)}>{selectedStatus}</StatusBadge> : null}</div></div>
             <TradingChart candles={selectedCandles} grade={selectedGrade} />
           </section>
 
-          <section className="dash-panel signals-panel-v78">
+          <section id="signals" className="dash-panel signals-panel-v79">
             <div className="signals-toolbar">
               <div><h2>Latest ranked signals</h2><p>Showing the top saved signals from the latest completed scan. The bot may scan more names than this table displays.</p></div>
-              <div className="toolbar-controls">
-                <span className="small-pill">Top {signals.length} of {scanStats.total || signals.length}</span>
-                <select value={signalLimit} onChange={(e) => setSignalLimit(Number(e.target.value))} aria-label="Signal display limit">
-                  <option value={50}>Top 50</option>
-                  <option value={100}>Top 100</option>
-                  <option value={250}>Top 250</option>
-                  <option value={500}>Top 500</option>
-                </select>
-              </div>
+              <div className="toolbar-controls"><span className="small-pill">Top {signals.length} of {scanStats.total || signals.length}</span><select value={signalLimit} onChange={(e) => setSignalLimit(Number(e.target.value))} aria-label="Signal display limit"><option value={50}>Top 50</option><option value={100}>Top 100</option><option value={250}>Top 250</option><option value={500}>Top 500</option></select></div>
             </div>
-            <div className="scan-clarity-row">
-              <span>Universe scanned: <b>{cleanUniverseLabel(latestScan?.universe_label) || bot?.settings?.universeLabel || "—"}</b></span>
-              <span>Scan candidates: <b>{scanStats.total}</b></span>
-              <span>Executable: <b>{scanStats.actionable}</b></span>
-              <span>Displayed: <b>{signals.length}</b></span>
-            </div>
-            <div className="table-wrap compact live-table pro-table">
-              <table>
-                <thead><tr><th>Symbol</th><th>Score</th><th>Bias</th><th>Setup</th><th>R/R</th><th>Entry</th><th>Status</th></tr></thead>
-                <tbody>
-                  {signals.length ? signals.map((row) => (
-                    <tr key={row.id} className={`${row.symbol === selectedSymbol ? "selected-row" : ""} ${row.actionable ? "action-row" : ""}`} onClick={() => void loadChart(row.symbol)}>
-                      <td><button className="text-button">{row.symbol}</button></td>
-                      <td>{row.score ?? "—"}</td>
-                      <td>{row.bias || "—"}</td>
-                      <td>{row.setup || "—"}</td>
-                      <td>{row.rr ? Number(row.rr).toFixed(2) : "—"}</td>
-                      <td>{formatPrice(row.entry)}</td>
-                      <td><StatusBadge tone={signalTone(row)}>{signalStatus(row)}</StatusBadge></td>
-                    </tr>
-                  )) : <tr><td colSpan={7}>No cloud scan signals yet. Wait for the next cron run or run once from /admin.</td></tr>}
-                </tbody>
-              </table>
+            <div className="scan-clarity-row"><span>Universe scanned: <b>{cleanUniverseLabel(latestScan?.universe_label) || bot?.settings?.universeLabel || "—"}</b></span><span>Scan candidates: <b>{scanStats.total}</b></span><span>Executable: <b>{scanStats.actionable}</b></span><span>Displayed: <b>{signals.length}</b></span></div>
+            <div className="table-wrap compact live-table pro-table signals-table-wrap">
+              <table><thead><tr><th>Symbol</th><th>Score</th><th>Bias</th><th>Setup</th><th>R/R</th><th>Entry</th><th>Status</th></tr></thead><tbody>
+                {signals.length ? signals.map((row) => (<tr key={row.id} className={`${row.symbol === selectedSymbol ? "selected-row" : ""} ${row.actionable ? "action-row" : ""}`} onClick={() => void loadChart(row.symbol)}><td><button className="text-button">{row.symbol}</button></td><td>{row.score ?? "—"}</td><td>{row.bias || "—"}</td><td>{row.setup || "—"}</td><td>{row.rr ? Number(row.rr).toFixed(2) : "—"}</td><td>{formatPrice(row.entry)}</td><td><StatusBadge tone={signalTone(row)}>{signalStatus(row)}</StatusBadge></td></tr>)) : <tr><td colSpan={7}>No cloud scan signals yet. Wait for the next cron run or run once from /admin.</td></tr>}
+              </tbody></table>
             </div>
           </section>
-        </div>
+        </section>
 
-        <aside className="dash-right-column right-rail-v78">
-          <section className="dash-panel selected-card pro-selected-card">
-            <h2>{selectedSymbol}</h2>
-            <div className="selected-score"><span>{selectedSignal?.score ?? selectedGrade?.score ?? "—"}</span><div><strong>{selectedSignal?.bias || selectedGrade?.bias || "Watch"}</strong><small>{selectedSignal?.setup || selectedGrade?.setupType || "No current signal"}</small></div></div>
-            <div className="mini-stack">
-              <StatTile label="Entry" value={formatPrice(selectedSignal?.entry ?? selectedGrade?.entry)} />
-              <StatTile label="Stop" value={formatPrice(selectedSignal?.stop ?? selectedGrade?.stop)} />
-              <StatTile label="Target" value={formatPrice(selectedSignal?.target ?? selectedGrade?.target)} />
-              <StatTile label="R/R" value={selectedSignal?.rr ? `${Number(selectedSignal.rr).toFixed(2)}:1` : selectedGrade ? `${selectedGrade.rr}:1` : "—"} />
-            </div>
-            <p className="setup-summary">{selectedStatus}</p>
-          </section>
+        <aside className="viewer-inspector" aria-label="Signal inspector">
+          <section className="dash-panel selected-card pro-selected-card inspector-card"><h2>{selectedSymbol}</h2><div className="selected-score"><span>{selectedSignal?.score ?? selectedGrade?.score ?? "—"}</span><div><strong>{selectedSignal?.bias || selectedGrade?.bias || "Watch"}</strong><small>{selectedSignal?.setup || selectedGrade?.setupType || "No current signal"}</small></div></div><div className="mini-stack"><StatTile label="Entry" value={formatPrice(selectedSignal?.entry ?? selectedGrade?.entry)} /><StatTile label="Stop" value={formatPrice(selectedSignal?.stop ?? selectedGrade?.stop)} /><StatTile label="Target" value={formatPrice(selectedSignal?.target ?? selectedGrade?.target)} /><StatTile label="R/R" value={selectedSignal?.rr ? `${Number(selectedSignal.rr).toFixed(2)}:1` : selectedGrade ? `${selectedGrade.rr}:1` : "—"} /></div><p className="setup-summary">{selectedStatus}</p></section>
 
-          <section className="dash-panel cloud-bot-panel">
-            <div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>Server-side paper trades saved in Supabase. No broker orders.</p></div><span className="small-pill">{openTrades.length}</span></div>
-            <div className="position-list">
-              {openTrades.length ? openTrades.map((p) => (
-                <div key={p.id} className="position-row open" onClick={() => void loadChart(p.symbol)}>
-                  <div><strong>{p.symbol}</strong><span>{p.bias} · cloud paper</span></div>
-                  <div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div>
-                </div>
-              )) : <p className="muted">No open cloud paper trades yet.</p>}
-            </div>
-          </section>
+          <section id="positions" className="dash-panel cloud-bot-panel inspector-card"><div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>Server-side paper trades saved in Supabase. No broker orders.</p></div><span className="small-pill">{openTrades.length}</span></div><div className="position-list">{openTrades.length ? openTrades.map((p) => (<div key={p.id} className="position-row open" onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · cloud paper</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div></div>)) : <p className="muted">No open cloud paper trades yet.</p>}</div></section>
 
-          <section className="dash-panel event-panel-v78">
-            <div className="panel-heading-row"><div><h2>Cloud bot activity</h2><p>Every cron/manual event appears here.</p></div></div>
-            <div className="activity-list timeline-list">
-              {events.length ? events.slice(0, 12).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{event.message}</span></div>) : <p className="muted">No cloud events yet.</p>}
-            </div>
-          </section>
+          <section id="activity" className="dash-panel event-panel-v78 inspector-card"><div className="panel-heading-row"><div><h2>Cloud bot activity</h2><p>Every cron/manual event appears here.</p></div></div><div className="activity-list timeline-list">{events.length ? events.slice(0, 12).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{event.message}</span></div>) : <p className="muted">No cloud events yet.</p>}</div></section>
 
-          <section className="dash-panel">
-            <h2>Recent closed trades</h2>
-            <div className="position-list">
-              {closedTrades.length ? closedTrades.slice(0, 10).map((p) => (
-                <div key={p.id} className="position-row closed" onClick={() => void loadChart(p.symbol)}>
-                  <div><strong>{p.symbol}</strong><span>{p.bias} · {p.notes || "closed"}</span></div>
-                  <div><strong>{money(Number(p.result_dollars || 0))}</strong><span>{p.result_r !== undefined ? `${p.result_r}R` : "closed"}</span></div>
-                </div>
-              )) : <p className="muted">No closed cloud paper trades loaded.</p>}
-            </div>
-          </section>
+          <section className="dash-panel inspector-card"><h2>Recent closed trades</h2><div className="position-list">{closedTrades.length ? closedTrades.slice(0, 10).map((p) => (<div key={p.id} className="position-row closed" onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · {p.notes || "closed"}</span></div><div><strong>{money(Number(p.result_dollars || 0))}</strong><span>{p.result_r !== undefined ? `${p.result_r}R` : "closed"}</span></div></div>)) : <p className="muted">No closed cloud paper trades loaded.</p>}</div></section>
         </aside>
-      </section>
+      </div>
     </main>
   );
 }

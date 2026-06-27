@@ -1,6 +1,6 @@
-# Market Setup Grader v7.8
+# Market Setup Grader v7.9
 
-v7.8 polishes the autonomous paper-trading dashboard and fixes the confusing scan/bot timing labels.
+v7.9 adds a professional three-pane viewer layout, simpler colors, sticky navigation, and responsive inspector panels while keeping the autonomous paper bot read-only for viewers.
 
 - `/` is the public/read-only viewer dashboard with a cleaner mission-control layout.
 - `/admin` is the private control page for arming, pausing, tuning, and manually running the cloud paper bot.
@@ -10,7 +10,7 @@ v7.8 polishes the autonomous paper-trading dashboard and fixes the confusing sca
 - Latest ranked signals can show Top 50 / 100 / 250 / 500 and clearly says “displayed of scanned.”
 - Real broker orders are still locked off. This is cloud paper trading only.
 
-After deploying v7.8:
+After deploying v7.9:
 
 1. Add `ADMIN_PASSWORD` and `ADMIN_SESSION_SECRET` in Vercel Environment Variables.
 2. Run `supabase/schema.sql` again in Supabase SQL Editor.
