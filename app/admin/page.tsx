@@ -51,7 +51,7 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 120,
-  notes: "Managed from v8.0 admin.",
+  notes: "Managed from v8.1 admin.",
 };
 
 function money(value: number) {
@@ -203,7 +203,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="dash-shell public-shell viewer-v79 viewer-v80 admin-v80">
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 admin-v80 admin-v81">
       <div className="terminal-workspace admin-workspace">
         <aside className="viewer-sidebar" aria-label="Admin navigation">
           <div className="sidebar-brand">
@@ -231,8 +231,8 @@ export default function AdminPage() {
         <section className="viewer-main-area">
           <header className="viewer-topbar admin-topbar-v80">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.0</span><span className="status-badge warn">Controls live here</span></div>
-              <h1>Market Setup Grader Admin</h1>
+              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.1</span><span className="status-badge warn">Controls live here</span></div>
+              <h1>Admin Command Center</h1>
               <p>Private command center for the autonomous cloud paper bot. Tune the system here, then use the homepage as a clean read-only monitoring desk.</p>
             </div>
             <div className="topbar-rule-card"><span>Saved bot profile</span><strong>{activeProfile}</strong><small>{riskSummary} · {tradeGate}</small></div>
