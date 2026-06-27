@@ -21,9 +21,13 @@ type BotControl = {
   allow_stale_simulation: boolean;
   scan_limit: number;
   notes?: string;
+  broker_mode?: string;
+  broker_paper_enabled?: boolean;
 };
 type BotEvent = { id: string; created_at: string; event_type: string; message: string };
 type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string };
+type BrokerStatus = { configured?: boolean; isPaper?: boolean; baseUrl?: string; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string; cash?: string; status?: string }; orders?: any[]; positions?: any[] };
+
 type BotStatus = {
   ok: boolean;
   configured: boolean;
@@ -34,6 +38,7 @@ type BotStatus = {
   events?: BotEvent[];
   openTrades?: PaperTrade[];
   closedTrades?: PaperTrade[];
+  broker?: BrokerStatus;
 };
 
 const defaultControl: BotControl = {
@@ -51,7 +56,9 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 120,
-  notes: "Managed from v8.1 admin.",
+  notes: "Managed from v8.2 admin.",
+  broker_mode: "Supabase Simulation",
+  broker_paper_enabled: false,
 };
 
 function money(value: number) {
@@ -179,6 +186,8 @@ export default function AdminPage() {
   const update = (patch: Partial<BotControl>) => setControl((prev) => ({ ...prev, ...patch }));
 
   const riskSummary = useMemo(() => `${control.risk_pct}% risk · ${control.max_position_pct}% max position · ${control.max_open_positions} max open`, [control]);
+  const brokerMode = control.broker_mode || "Supabase Simulation";
+  const brokerArmed = brokerMode === "Alpaca Paper" && Boolean(control.broker_paper_enabled);
   const activeProfile = `${control.universe_label} · ${control.scan_limit} max symbols · ${control.timeframe}`;
   const tradeGate = `Scores ${control.min_score}-${control.max_score} · min R/R ${control.min_rr} · stale guard ${control.max_stale_minutes}m`;
 
@@ -231,7 +240,7 @@ export default function AdminPage() {
         <section className="viewer-main-area">
           <header className="viewer-topbar admin-topbar-v80">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.1</span><span className="status-badge warn">Controls live here</span></div>
+              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.2</span><span className="status-badge warn">Broker paper bridge</span></div>
               <h1>Admin Command Center</h1>
               <p>Private command center for the autonomous cloud paper bot. Tune the system here, then use the homepage as a clean read-only monitoring desk.</p>
             </div>
@@ -239,6 +248,7 @@ export default function AdminPage() {
           </header>
 
           <section className="viewer-metrics-grid">
+            <StatTile label="Broker mode" value={brokerMode} helper={brokerArmed ? "Alpaca paper order bridge is enabled." : "No external broker orders in this mode."} tone={brokerArmed ? "good" : brokerMode === "Real Locked" ? "bad" : "warn"} />
             <StatTile label="Bot engine" value={control.bot_enabled ? "Running" : "Paused"} helper={control.bot_enabled ? "Cron can run scheduled cycles." : "Cron calls will skip until resumed."} tone={control.bot_enabled ? "good" : "warn"} />
             <StatTile label="Paper execution" value={canPaperTrade ? "Armed" : "Disarmed"} helper={canPaperTrade ? "Cloud bot may open paper trades when rules pass." : "Scans/checks can run, but entries are blocked."} tone={canPaperTrade ? "good" : "warn"} />
             <StatTile label="Market" value={bot?.market?.label || "Loading"} helper={bot?.market?.reason || "Checking market guard."} tone={bot?.market?.isOpen ? "good" : "warn"} />
@@ -279,6 +289,8 @@ export default function AdminPage() {
               <label>Min R/R<input type="number" step="0.1" value={control.min_rr} onChange={(e) => update({ min_rr: Number(e.target.value) || 1 })} /></label>
               <label>Max stale minutes<input type="number" value={control.max_stale_minutes} onChange={(e) => update({ max_stale_minutes: Number(e.target.value) || 30 })} /></label>
               <label>Stale simulation<select value={control.allow_stale_simulation ? "on" : "off"} onChange={(e) => update({ allow_stale_simulation: e.target.value === "on" })}><option value="off">OFF: block stale candles</option><option value="on">ON: paper test only</option></select></label>
+              <label>Execution mode<select value={brokerMode} onChange={(e) => update({ broker_mode: e.target.value, broker_paper_enabled: e.target.value === "Alpaca Paper" ? control.broker_paper_enabled : false })}><option>Supabase Simulation</option><option>Alpaca Paper</option><option>Real Locked</option></select></label>
+              <label>Alpaca paper bridge<select value={control.broker_paper_enabled ? "on" : "off"} onChange={(e) => update({ broker_paper_enabled: e.target.value === "on" })}><option value="off">OFF: no broker orders</option><option value="on">ON: paper broker orders</option></select></label>
             </div>
             <label className="full-width-label">Admin notes<textarea rows={3} value={control.notes || ""} onChange={(e) => update({ notes: e.target.value })} /></label>
           </section>
@@ -289,12 +301,23 @@ export default function AdminPage() {
               <div><span>Universe layer</span><strong>{control.universe_label}</strong><small>Current scan cap: {control.scan_limit}. This is the tradable liquid watchlist, not literally every ticker.</small></div>
               <div><span>Setup layer</span><strong>Pullback / reclaim + continuation</strong><small>Grades long and short setups, but only opens paper trades if score, R/R, freshness, and risk checks pass.</small></div>
               <div><span>Risk layer</span><strong>{control.risk_pct}% risk · {control.max_open_positions} max open</strong><small>Position size is capped by risk-per-trade and max position value.</small></div>
+              <div><span>Execution layer</span><strong>{brokerMode}</strong><small>{brokerArmed ? "Orders route to Alpaca paper only; real trading URL remains blocked." : "Bot records Supabase simulation trades only."}</small></div>
               <div><span>Safety layer</span><strong>Paper-only, market-hours guarded</strong><small>Real broker orders remain locked off. Stale data is blocked unless simulation is manually enabled.</small></div>
             </div>
           </section>
         </section>
 
         <aside className="viewer-inspector admin-inspector" aria-label="Admin inspector">
+          <section className="dash-panel inspector-card system-snapshot-card">
+            <h2>Broker bridge</h2>
+            <div className="rule-stack">
+              <div><span>Mode</span><strong>{brokerMode}</strong><small>{brokerArmed ? "Alpaca paper submissions enabled from admin." : "Broker submissions disabled."}</small></div>
+              <div><span>Endpoint</span><strong>{bot?.broker?.isPaper ? "Paper API" : "Locked / not paper"}</strong><small>{bot?.broker?.message || "Broker status loads through server environment variables."}</small></div>
+              <div><span>Account</span><strong>{bot?.broker?.account?.portfolio_value ? money(Number(bot.broker.account.portfolio_value)) : "—"}</strong><small>{bot?.broker?.account?.buying_power ? `${money(Number(bot.broker.account.buying_power))} buying power` : (bot?.broker?.error || "No broker account sync loaded yet.")}</small></div>
+              <div><span>Broker open</span><strong>{bot?.broker?.positions?.length ?? 0} positions · {bot?.broker?.orders?.length ?? 0} orders</strong><small>Dashboard still stores the audit record in Supabase.</small></div>
+            </div>
+          </section>
+
           <section id="trades" className="dash-panel inspector-card cloud-bot-panel">
             <div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>Server-side paper positions saved in Supabase.</p></div><span className="small-pill">{openTrades.length}</span></div>
             <div className="position-list">
@@ -313,6 +336,7 @@ export default function AdminPage() {
             <h2>Live rule snapshot</h2>
             <div className="rule-stack">
               <div><span>Engine</span><strong>{control.bot_enabled ? "Running" : "Paused"}</strong><small>{canPaperTrade ? "Paper entries armed" : "Paper entries disarmed"}</small></div>
+              <div><span>Broker</span><strong>{brokerMode}</strong><small>{brokerArmed ? "Alpaca paper bridge enabled" : "Broker bridge off / simulation"}</small></div>
               <div><span>Scan</span><strong>{activeProfile}</strong><small>{tradeGate}</small></div>
               <div><span>Risk</span><strong>{riskSummary}</strong><small>Starting equity {money(control.starting_equity)} · stale simulation {control.allow_stale_simulation ? "ON" : "OFF"}</small></div>
             </div>

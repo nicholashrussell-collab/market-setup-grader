@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { getRuntimeCloudBotSettings } from "@/lib/bot-config";
 import { getSimpleMarketStatus } from "@/lib/paper-bot";
 import { getSupabaseConfigStatus, supabaseRest } from "@/lib/supabase-rest";
+import { getAlpacaPaperAccount, getAlpacaPaperOrders, getAlpacaPaperPositions, getBrokerConfigStatus } from "@/lib/alpaca-trading";
 
 export const dynamic = "force-dynamic";
 
 type BotEvent = { id: string; created_at: string; event_type: string; message: string; payload?: unknown };
-type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string };
+type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string; execution_mode?: string; broker_order_id?: string; broker_status?: string };
 type ScanRun = { id: string; created_at: string; universe_label?: string; timeframe?: string; candidates_count?: number; actionable_count?: number };
 
 export async function GET() {
@@ -14,21 +15,26 @@ export async function GET() {
   const settings = await getRuntimeCloudBotSettings();
   const market = getSimpleMarketStatus();
   if (!status.configured) {
-    return NextResponse.json({ ok: false, configured: false, message: status.message, settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe, enabled: settings.enabled, paperTradingEnabled: settings.paperTradingEnabled, startingEquity: settings.startingEquity, riskPct: settings.riskPct, scanLimit: settings.scanLimit, minScore: settings.minScore, maxScore: settings.maxScore, minRR: settings.minRR, maxStaleMinutes: settings.maxStaleMinutes, allowStaleSimulation: settings.allowStaleSimulation }, market });
+    return NextResponse.json({ ok: false, configured: false, message: status.message, settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe, enabled: settings.enabled, paperTradingEnabled: settings.paperTradingEnabled, startingEquity: settings.startingEquity, riskPct: settings.riskPct, scanLimit: settings.scanLimit, minScore: settings.minScore, maxScore: settings.maxScore, minRR: settings.minRR, maxStaleMinutes: settings.maxStaleMinutes, allowStaleSimulation: settings.allowStaleSimulation, brokerMode: settings.brokerMode, brokerPaperEnabled: settings.brokerPaperEnabled }, market, broker: getBrokerConfigStatus() });
   }
   try {
-    const [events, openTrades, closedTrades, scans] = await Promise.all([
+    const brokerConfig = getBrokerConfigStatus();
+    const brokerLive = settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled && brokerConfig.configured && brokerConfig.isPaper;
+    const brokerPromise = brokerLive ? Promise.all([getAlpacaPaperAccount(), getAlpacaPaperOrders("open", 50), getAlpacaPaperPositions()]).then(([account, orders, positions]) => ({ ...brokerConfig, account, orders, positions })).catch((err) => ({ ...brokerConfig, error: err instanceof Error ? err.message : "Broker status failed." })) : Promise.resolve(brokerConfig);
+    const [events, openTrades, closedTrades, scans, broker] = await Promise.all([
       supabaseRest<BotEvent[]>("bot_events?select=*&order=created_at.desc&limit=15", { method: "GET" }).catch(() => []),
       supabaseRest<PaperTrade[]>("paper_trades?status=eq.Open&select=*&order=created_at.desc&limit=20", { method: "GET" }).catch(() => []),
       supabaseRest<PaperTrade[]>("paper_trades?status=eq.Closed&select=*&order=updated_at.desc&limit=20", { method: "GET" }).catch(() => []),
       supabaseRest<ScanRun[]>("scan_runs?select=*&order=created_at.desc&limit=10", { method: "GET" }).catch(() => []),
+      brokerPromise,
     ]);
     return NextResponse.json({
       ok: true,
       configured: true,
       message: "Cloud bot status loaded.",
       market,
-      settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe, enabled: settings.enabled, maxOpenPositions: settings.maxOpenPositions, paperTradingEnabled: settings.paperTradingEnabled, startingEquity: settings.startingEquity, riskPct: settings.riskPct, scanLimit: settings.scanLimit, minScore: settings.minScore, maxScore: settings.maxScore, minRR: settings.minRR, maxStaleMinutes: settings.maxStaleMinutes, allowStaleSimulation: settings.allowStaleSimulation },
+      settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe, enabled: settings.enabled, maxOpenPositions: settings.maxOpenPositions, paperTradingEnabled: settings.paperTradingEnabled, startingEquity: settings.startingEquity, riskPct: settings.riskPct, scanLimit: settings.scanLimit, minScore: settings.minScore, maxScore: settings.maxScore, minRR: settings.minRR, maxStaleMinutes: settings.maxStaleMinutes, allowStaleSimulation: settings.allowStaleSimulation, brokerMode: settings.brokerMode, brokerPaperEnabled: settings.brokerPaperEnabled },
+      broker,
       lastEvent: events[0] || null,
       events,
       openTrades,

@@ -2,6 +2,8 @@ import { GradeProfile, TargetMode, Timeframe } from "@/lib/trading";
 
 export type ApiDataSource = "Alpaca" | "Massive";
 
+export type BrokerExecutionMode = "Supabase Simulation" | "Alpaca Paper" | "Real Locked";
+
 export type CloudBotSettings = {
   enabled: boolean;
   paperTradingEnabled: boolean;
@@ -24,6 +26,8 @@ export type CloudBotSettings = {
   longOnly: boolean;
   allowStaleSimulation: boolean;
   scanLimit: number;
+  brokerMode: BrokerExecutionMode;
+  brokerPaperEnabled: boolean;
 };
 
 export const CORE_9_SYMBOLS = "AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, SPY, QQQ";
@@ -78,6 +82,8 @@ export function getCloudBotSettings(): CloudBotSettings {
     longOnly: envBoolean("BOT_LONG_ONLY", true),
     allowStaleSimulation: envBoolean("BOT_ALLOW_STALE_SIMULATION", false),
     scanLimit: envNumber("BOT_SCAN_LIMIT", universeLabel === "Super Wide 500" ? 500 : 120),
+    brokerMode: (process.env.BOT_BROKER_MODE as BrokerExecutionMode) || "Supabase Simulation",
+    brokerPaperEnabled: envBoolean("BOT_BROKER_PAPER_ENABLED", false),
   };
 }
 
@@ -99,6 +105,8 @@ export type BotControlRow = {
   allow_stale_simulation?: boolean;
   scan_limit?: number;
   notes?: string;
+  broker_mode?: string;
+  broker_paper_enabled?: boolean;
 };
 
 function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): CloudBotSettings {
@@ -122,6 +130,8 @@ function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): Cl
     maxStaleMinutes: Number(row.max_stale_minutes ?? base.maxStaleMinutes),
     allowStaleSimulation: typeof row.allow_stale_simulation === "boolean" ? row.allow_stale_simulation : base.allowStaleSimulation,
     scanLimit: Number.isFinite(scanLimit) ? scanLimit : base.scanLimit,
+    brokerMode: (row.broker_mode as BrokerExecutionMode) || base.brokerMode,
+    brokerPaperEnabled: typeof row.broker_paper_enabled === "boolean" ? row.broker_paper_enabled : base.brokerPaperEnabled,
   };
 }
 
@@ -155,6 +165,8 @@ export function defaultBotControlRow(): BotControlRow {
     max_stale_minutes: s.maxStaleMinutes,
     allow_stale_simulation: s.allowStaleSimulation,
     scan_limit: s.scanLimit,
-    notes: "Managed from v7.7 /admin.",
+    notes: "Managed from v8.2 /admin.",
+    broker_mode: "Supabase Simulation",
+    broker_paper_enabled: false,
   };
 }

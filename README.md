@@ -1,32 +1,29 @@
-# Market Setup Grader v8.1
+# Market Setup Grader v8.2 — Alpaca Paper Broker Bridge
 
-Professional navigation layout for the autonomous paper trading viewer.
+This version keeps the public dashboard read-only and adds an optional Alpaca Paper broker bridge from the private `/admin` page. It can still run in Supabase-only simulation mode, or it can submit Alpaca paper bracket orders when explicitly enabled. Real broker execution remains locked.
 
-## What changed in v8.1
+## Modes
 
-- Public viewer now uses real route-based navigation:
-  - `/` Home / overview
-  - `/chart-desk`
-  - `/signals`
-  - `/positions`
-  - `/activity`
-- Left sidebar stays pinned to the side on desktop.
-- Right inspector stays pinned separately from the main content.
-- Cleaner professional color system: navy, charcoal, black, white, beige/tan.
-- Main content is split into focused pages instead of one long scrolling page.
-- Admin page keeps the same professional shell and is marked v8.1.
-- No trading-rule changes. This is still cloud paper trading only.
+- **Supabase Simulation**: bot opens simulated paper trades only in Supabase.
+- **Alpaca Paper**: bot submits Alpaca paper bracket orders and also saves an audit row in Supabase.
+- **Real Locked**: visible safety mode; real trading is not enabled in this build.
 
-## Install over the current project
+## Required setup for Alpaca Paper
 
-```powershell
-robocopy "C:\Users\nicho\Downloads\market-setup-grader-v8-1\v8_1" "C:\Users\nicho\Downloads\market-setup-grader-v7-2\v7_2" /E /XD .git node_modules .next .vercel /XF .env .env.local package-lock.json
+In Vercel Environment Variables, keep/add:
 
-cd C:\Users\nicho\Downloads\market-setup-grader-v7-2\v7_2
-git status
-git add -A
-git commit -m "Add v8.1 professional navigation shell"
-git push
+```text
+APCA_API_KEY_ID=your Alpaca paper key
+APCA_API_SECRET_KEY=your Alpaca paper secret
+APCA_API_BASE_URL=https://paper-api.alpaca.markets
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=...
+ADMIN_PASSWORD=...
+ADMIN_SESSION_SECRET=...
 ```
 
-No Supabase schema rerun is required for v8.1.
+Run `supabase/schema.sql` once after deploying v8.2 so the broker columns and control settings exist.
+
+## Safety
+
+This app refuses broker-order submission unless the Alpaca base URL contains `paper-api.alpaca.markets`. Use Alpaca Paper for several weeks before considering any real-money order system.

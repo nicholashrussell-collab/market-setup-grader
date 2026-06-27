@@ -6,7 +6,9 @@ import TradingChart from "@/components/TradingChart";
 import { Candle, GradeResult, Timeframe, formatDateTime, gradeSetup } from "@/lib/trading";
 
 type BotEvent = { id: string; created_at: string; event_type: string; message: string };
-type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string };
+type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string; execution_mode?: string; broker_order_id?: string; broker_status?: string };
+type BrokerStatus = { configured?: boolean; isPaper?: boolean; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string }; orders?: any[]; positions?: any[] };
+
 type CloudBotStatus = {
   ok: boolean;
   configured: boolean;
@@ -27,12 +29,15 @@ type CloudBotStatus = {
     minRR?: number;
     maxStaleMinutes?: number;
     allowStaleSimulation?: boolean;
+    brokerMode?: string;
+    brokerPaperEnabled?: boolean;
   };
   lastEvent?: BotEvent | null;
   events?: BotEvent[];
   openTrades?: PaperTrade[];
   closedTrades?: PaperTrade[];
   scans?: ScanRun[];
+  broker?: BrokerStatus;
 };
 type ScanRun = { id: string; created_at: string; universe_label?: string; timeframe?: string; symbols_count?: number; candidates_count?: number; actionable_count?: number; source?: string; reason?: string };
 type ScanSignal = { id: string; symbol: string; score?: number; bias?: string; setup?: string; rr?: number; entry?: number; stop?: number; target?: number; latest_time?: string; stale_minutes?: number; actionable?: boolean; warnings?: string[]; reasons?: string[]; raw?: any };
@@ -266,7 +271,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
       {error ? <div className="error-box">{error}</div> : <div className="execution-note upgraded-note">{status} Latest bot run and latest saved scan are separate. If the market is closed, cron can still run while the saved scan remains older.</div>}
       <div className="overview-grid-v81">
         {chartPanel}
-        <section className="dash-panel system-snapshot-card"><h2>System snapshot</h2><div className="rule-stack"><div><span>Mode</span><strong>Autonomous cloud paper bot</strong><small>Cron runs every 15 minutes; viewer is read-only.</small></div><div><span>Active rules</span><strong>{currentUniverse}</strong><small>{currentScanLimit} max symbols · {currentTimeframe} · scores {bot?.settings?.minScore ?? 80}-{bot?.settings?.maxScore ?? 89}</small></div><div><span>Risk controls</span><strong>{bot?.settings?.riskPct || 1}% per paper trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1} · stale guard {bot?.settings?.maxStaleMinutes || 30} min</small></div><div><span>Research basis</span><strong>Active-only pullback/reclaim</strong><small>No sleeve, no real broker orders, cloud-paper validation first.</small></div></div></section>
+        <section className="dash-panel system-snapshot-card"><h2>System snapshot</h2><div className="rule-stack"><div><span>Mode</span><strong>Autonomous cloud paper bot</strong><small>Cron runs every 15 minutes; viewer is read-only.</small></div><div><span>Active rules</span><strong>{currentUniverse}</strong><small>{currentScanLimit} max symbols · {currentTimeframe} · scores {bot?.settings?.minScore ?? 80}-{bot?.settings?.maxScore ?? 89}</small></div><div><span>Risk controls</span><strong>{bot?.settings?.riskPct || 1}% per paper trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1} · stale guard {bot?.settings?.maxStaleMinutes || 30} min</small></div><div><span>Research basis</span><strong>Active-only pullback/reclaim</strong><small>Execution mode: {bot?.settings?.brokerMode || "Supabase Simulation"}. Real broker orders stay locked.</small></div></div></section>
       </div>
       {signalsPanel}
     </section>
@@ -296,7 +301,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <section className="viewer-main-area page-viewer-main">
           <header className="viewer-topbar page-header-v81">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Autonomous paper trading viewer</span><StatusBadge tone="info">v8.1</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+              <div className="viewer-version-row"><span className="eyebrow">Autonomous paper trading viewer</span><StatusBadge tone="info">v8.2</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
               <h1>{activeLabel}</h1>
               <p>{activeView === "overview" ? "A professional monitoring desk for the scheduled cloud paper bot. The public site is view-only; the private admin page controls settings and execution." : "This page is part of the read-only viewer. Use the left navigation to move between dashboard sections without changing the bot."}</p>
             </div>
@@ -319,10 +324,11 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
               <div><span>Mode</span><strong>Autonomous cloud paper bot</strong><small>Cron every 15 min; viewer is read-only.</small></div>
               <div><span>Active rules</span><strong>{currentUniverse}</strong><small>{currentScanLimit} max · {currentTimeframe}</small></div>
               <div><span>Risk</span><strong>{bot?.settings?.riskPct || 1}% per paper trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1}</small></div>
+              <div><span>Broker bridge</span><strong>{bot?.settings?.brokerMode || "Supabase Simulation"}</strong><small>{bot?.settings?.brokerPaperEnabled ? "Alpaca paper bridge enabled" : "Broker submissions off"}</small></div>
             </div>
           </section>
 
-          <section id="positions" className="dash-panel cloud-bot-panel inspector-card"><div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>Server-side paper trades saved in Supabase. No broker orders.</p></div><span className="small-pill">{openTrades.length}</span></div><div className="position-list">{openTrades.length ? openTrades.map((p) => (<div key={p.id} className="position-row open" onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · cloud paper</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div></div>)) : <p className="muted">No open cloud paper trades yet.</p>}</div></section>
+          <section id="positions" className="dash-panel cloud-bot-panel inspector-card"><div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>Server-side paper trades saved in Supabase. Broker paper mode is shown when enabled.</p></div><span className="small-pill">{openTrades.length}</span></div><div className="position-list">{openTrades.length ? openTrades.map((p) => (<div key={p.id} className="position-row open" onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · {p.execution_mode || "cloud paper"}</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div></div>)) : <p className="muted">No open cloud paper trades yet.</p>}</div></section>
 
           <section id="activity" className="dash-panel event-panel-v78 inspector-card"><div className="panel-heading-row"><div><h2>Cloud bot activity</h2><p>Every cron/manual event appears here.</p></div></div><div className="activity-list timeline-list">{events.length ? events.slice(0, 12).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{event.message}</span></div>) : <p className="muted">No cloud events yet.</p>}</div></section>
         </aside>

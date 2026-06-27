@@ -51,6 +51,8 @@ export async function PATCH(req: Request) {
     "allow_stale_simulation",
     "scan_limit",
     "notes",
+    "broker_mode",
+    "broker_paper_enabled",
   ];
   for (const key of keys) {
     if (Object.prototype.hasOwnProperty.call(body, key)) allowed[key] = body[key];

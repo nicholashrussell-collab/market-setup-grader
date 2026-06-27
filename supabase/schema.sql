@@ -169,3 +169,21 @@ values (
   'v7.7 admin/autopilot defaults. Paper execution starts disarmed.'
 )
 on conflict (id) do nothing;
+
+-- v8.2 Alpaca paper broker bridge additions. Safe to run multiple times.
+alter table public.paper_trades add column if not exists execution_mode text;
+alter table public.paper_trades add column if not exists broker_order_id text;
+alter table public.paper_trades add column if not exists broker_client_order_id text;
+alter table public.paper_trades add column if not exists broker_status text;
+alter table public.paper_trades add column if not exists broker_payload jsonb;
+
+create index if not exists paper_trades_broker_order_idx on public.paper_trades (broker_order_id);
+create index if not exists paper_trades_execution_mode_idx on public.paper_trades (execution_mode, created_at desc);
+
+alter table public.bot_control add column if not exists broker_mode text not null default 'Supabase Simulation';
+alter table public.bot_control add column if not exists broker_paper_enabled boolean not null default false;
+
+update public.bot_control
+set broker_mode = coalesce(broker_mode, 'Supabase Simulation'),
+    broker_paper_enabled = coalesce(broker_paper_enabled, false)
+where id = 'main';
