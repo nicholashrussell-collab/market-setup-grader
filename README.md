@@ -1,6 +1,22 @@
-# Market Setup Grader v8.2 — Alpaca Paper Broker Bridge
+# Market Setup Grader v8.3 — Alpaca Paper Broker Bridge
 
-This version keeps the public dashboard read-only and adds an optional Alpaca Paper broker bridge from the private `/admin` page. It can still run in Supabase-only simulation mode, or it can submit Alpaca paper bracket orders when explicitly enabled. Real broker execution remains locked.
+This version keeps the public dashboard read-only and adds a one-click autonomous paper setup flow from the private `/admin` page. It can still run in Supabase-only simulation mode, or it can submit Alpaca paper bracket orders when explicitly enabled. Real broker execution remains locked.
+
+## One-click setup
+
+In `/admin`, use **Start Autonomous Paper Bot**. It runs pre-flight checks, verifies Supabase, verifies Alpaca Paper, saves the Stable Autonomous Paper Preset, arms paper execution, and keeps real broker orders locked.
+
+Stable preset:
+
+- Universe: Super Wide 100
+- Timeframe: 15Min
+- Scan limit: 100
+- Risk per trade: 1%
+- Max open trades: 4
+- Min score: 80
+- Min R/R: 1.0
+- Stale simulation: OFF
+- Execution mode: Alpaca Paper
 
 ## Modes
 
@@ -22,7 +38,7 @@ ADMIN_PASSWORD=...
 ADMIN_SESSION_SECRET=...
 ```
 
-Run `supabase/schema.sql` once after deploying v8.2 so the broker columns and control settings exist.
+Run `supabase/schema.sql` once after deploying v8.3 so the broker columns and control settings exist.
 
 ## Safety
 

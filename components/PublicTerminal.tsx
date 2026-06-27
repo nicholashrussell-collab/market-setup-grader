@@ -301,7 +301,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <section className="viewer-main-area page-viewer-main">
           <header className="viewer-topbar page-header-v81">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Autonomous paper trading viewer</span><StatusBadge tone="info">v8.2</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+              <div className="viewer-version-row"><span className="eyebrow">Autonomous paper trading viewer</span><StatusBadge tone="info">v8.3</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
               <h1>{activeLabel}</h1>
               <p>{activeView === "overview" ? "A professional monitoring desk for the scheduled cloud paper bot. The public site is view-only; the private admin page controls settings and execution." : "This page is part of the read-only viewer. Use the left navigation to move between dashboard sections without changing the bot."}</p>
             </div>

@@ -165,7 +165,7 @@ export function defaultBotControlRow(): BotControlRow {
     max_stale_minutes: s.maxStaleMinutes,
     allow_stale_simulation: s.allowStaleSimulation,
     scan_limit: s.scanLimit,
-    notes: "Managed from v8.2 /admin.",
+    notes: "Managed from v8.3 /admin.",
     broker_mode: "Supabase Simulation",
     broker_paper_enabled: false,
   };

@@ -2673,3 +2673,37 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* v8.3 autonomous broker setup polish */
+.autonomous-start-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid rgba(13, 44, 84, 0.18);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(245, 239, 226, 0.94), rgba(255, 255, 255, 0.88));
+  box-shadow: 0 18px 50px rgba(12, 24, 42, 0.08);
+  margin-bottom: 16px;
+}
+.autonomous-start-card h3 { margin: 5px 0 6px; font-size: 1.1rem; color: var(--ink); }
+.autonomous-start-card p { margin: 0; color: var(--muted); max-width: 760px; }
+.big-arm-button { min-height: 52px; padding-inline: 24px; white-space: nowrap; }
+.preflight-list { display: grid; gap: 8px; margin: 10px 0 16px; }
+.preflight-list > div {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255,255,255,0.78);
+}
+.preflight-list strong { font-size: 0.76rem; letter-spacing: 0.06em; }
+.preflight-list span { color: var(--muted); font-size: 0.86rem; }
+.preflight-ok strong { color: #1f7a4d; }
+.preflight-bad strong { color: #9f2f2f; }
+@media (max-width: 920px) {
+  .autonomous-start-card { grid-template-columns: 1fr; }
+  .big-arm-button { width: 100%; }
+}

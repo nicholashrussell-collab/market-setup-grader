@@ -27,6 +27,7 @@ type BotControl = {
 type BotEvent = { id: string; created_at: string; event_type: string; message: string };
 type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string };
 type BrokerStatus = { configured?: boolean; isPaper?: boolean; baseUrl?: string; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string; cash?: string; status?: string }; orders?: any[]; positions?: any[] };
+type PreflightCheck = { name: string; ok: boolean; message: string };
 
 type BotStatus = {
   ok: boolean;
@@ -56,7 +57,7 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 120,
-  notes: "Managed from v8.2 admin.",
+  notes: "Managed from v8.3 admin.",
   broker_mode: "Supabase Simulation",
   broker_paper_enabled: false,
 };
@@ -81,6 +82,8 @@ export default function AdminPage() {
   const [status, setStatus] = useState("Admin control center loading...");
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [startingAutonomous, setStartingAutonomous] = useState(false);
+  const [preflightChecks, setPreflightChecks] = useState<PreflightCheck[]>([]);
 
   const openTrades = bot?.openTrades || [];
   const closedTrades = bot?.closedTrades || [];
@@ -183,6 +186,25 @@ export default function AdminPage() {
     }
   };
 
+  const startAutonomousPaperBot = async () => {
+    setStartingAutonomous(true);
+    setStatus("Running autonomous paper bot pre-flight checks...");
+    setPreflightChecks([]);
+    try {
+      const res = await fetch("/api/admin/autostart", { method: "POST" });
+      const data = await res.json();
+      setPreflightChecks(data.checks || []);
+      if (!res.ok || !data.ok) throw new Error(data.message || "Autonomous paper setup failed.");
+      if (data.control) setControl({ ...defaultControl, ...data.control });
+      setStatus(data.message || "Autonomous paper bot is live.");
+      await loadAdminData();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Autonomous paper setup failed.");
+    } finally {
+      setStartingAutonomous(false);
+    }
+  };
+
   const update = (patch: Partial<BotControl>) => setControl((prev) => ({ ...prev, ...patch }));
 
   const riskSummary = useMemo(() => `${control.risk_pct}% risk · ${control.max_position_pct}% max position · ${control.max_open_positions} max open`, [control]);
@@ -240,9 +262,9 @@ export default function AdminPage() {
         <section className="viewer-main-area">
           <header className="viewer-topbar admin-topbar-v80">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.2</span><span className="status-badge warn">Broker paper bridge</span></div>
+              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.3</span><span className="status-badge good">One-click autonomous paper</span></div>
               <h1>Admin Command Center</h1>
-              <p>Private command center for the autonomous cloud paper bot. Tune the system here, then use the homepage as a clean read-only monitoring desk.</p>
+              <p>Private command center for the autonomous cloud paper bot. Use one-click setup to arm the stable Alpaca Paper preset, then use the homepage as a read-only monitoring desk.</p>
             </div>
             <div className="topbar-rule-card"><span>Saved bot profile</span><strong>{activeProfile}</strong><small>{riskSummary} · {tradeGate}</small></div>
           </header>
@@ -264,8 +286,17 @@ export default function AdminPage() {
 
           <section id="command" className="dash-command-card admin-command-card">
             <div className="panel-heading-row"><div><h2>Autopilot command</h2><p>These settings are saved to Supabase. Cron uses them even when your browser is closed.</p></div><span className="small-pill">Every 15 min</span></div>
+            <div className="autonomous-start-card">
+              <div>
+                <span className="eyebrow">Recommended final setup</span>
+                <h3>Start Autonomous Paper Bot</h3>
+                <p>Runs pre-flight checks, connects Alpaca Paper, saves the stable preset, arms paper execution, and keeps real broker trading locked.</p>
+              </div>
+              <button className="arm-button big-arm-button" onClick={() => void startAutonomousPaperBot()} disabled={startingAutonomous || saving}>{startingAutonomous ? "Starting..." : "Start autonomous paper bot"}</button>
+            </div>
+            {preflightChecks.length ? <div className="preflight-list">{preflightChecks.map((check) => <div key={check.name} className={check.ok ? "preflight-ok" : "preflight-bad"}><strong>{check.ok ? "PASS" : "BLOCK"} · {check.name}</strong><span>{check.message}</span></div>)}</div> : null}
             <div className="row-actions admin-primary-actions">
-              <button className="arm-button" onClick={() => void quickSetPaperTrading(true)} disabled={saving || canPaperTrade}>Arm paper bot</button>
+              <button className="secondary" onClick={() => void quickSetPaperTrading(true)} disabled={saving || canPaperTrade}>Arm paper bot only</button>
               <button className="danger" onClick={() => void quickSetPaperTrading(false)} disabled={saving || !control.paper_trading_enabled}>Disarm paper bot</button>
               <button className="secondary" onClick={() => void update({ bot_enabled: !control.bot_enabled })}>{control.bot_enabled ? "Pause engine" : "Resume engine"}</button>
               <button onClick={() => void runOnce()} disabled={running}>{running ? "Running..." : "Run cloud bot once"}</button>
@@ -275,7 +306,7 @@ export default function AdminPage() {
           </section>
 
           <section id="settings" className="dash-panel settings-panel-v80">
-            <div className="panel-heading-row"><div><h2>Cloud bot settings</h2><p>These are the live paper rules the scheduled worker reads. Start conservative, then let the cloud logs prove behavior before expanding.</p></div></div>
+            <div className="panel-heading-row"><div><h2>Cloud bot settings</h2><p>These are the live paper rules the scheduled worker reads. The one-click preset fills these with a stable broker-paper configuration; manual edits are still available.</p></div></div>
             <div className="settings-grid admin-settings-grid compact-settings-grid">
               <label>Universe<select value={control.universe_label} onChange={(e) => update({ universe_label: e.target.value })}><option>Core 9</option><option>Super Wide 100</option><option>Super Wide 500</option></select></label>
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>
@@ -348,7 +379,7 @@ export default function AdminPage() {
               <div><strong>Direction</strong><span>Active-only paper trading. No buy-and-hold sleeve in the live bot.</span></div>
               <div><strong>Strong reference</strong><span>100-stock active scanner backtest showed the clearest promise; cloud paper validation is the next proof step.</span></div>
               <div><strong>Risk default</strong><span>1% per paper trade, 25% max position, 4 max open trades.</span></div>
-              <div><strong>Current priority</strong><span>Watch several market days of autonomous logs before considering any real broker integration.</span></div>
+              <div><strong>Current priority</strong><span>Run Alpaca Paper autonomously for several market days. Real broker trading remains locked until the paper broker logs prove clean behavior.</span></div>
             </div>
           </section>
         </aside>
