@@ -14,7 +14,7 @@ export async function GET() {
   const settings = await getRuntimeCloudBotSettings();
   const market = getSimpleMarketStatus();
   if (!status.configured) {
-    return NextResponse.json({ ok: false, configured: false, message: status.message, settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe }, market });
+    return NextResponse.json({ ok: false, configured: false, message: status.message, settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe, enabled: settings.enabled, paperTradingEnabled: settings.paperTradingEnabled, startingEquity: settings.startingEquity, riskPct: settings.riskPct, scanLimit: settings.scanLimit, minScore: settings.minScore, maxScore: settings.maxScore, minRR: settings.minRR, maxStaleMinutes: settings.maxStaleMinutes, allowStaleSimulation: settings.allowStaleSimulation }, market });
   }
   try {
     const [events, openTrades, closedTrades, scans] = await Promise.all([
@@ -28,7 +28,7 @@ export async function GET() {
       configured: true,
       message: "Cloud bot status loaded.",
       market,
-      settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe, maxOpenPositions: settings.maxOpenPositions, paperTradingEnabled: settings.paperTradingEnabled },
+      settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe, enabled: settings.enabled, maxOpenPositions: settings.maxOpenPositions, paperTradingEnabled: settings.paperTradingEnabled, startingEquity: settings.startingEquity, riskPct: settings.riskPct, scanLimit: settings.scanLimit, minScore: settings.minScore, maxScore: settings.maxScore, minRR: settings.minRR, maxStaleMinutes: settings.maxStaleMinutes, allowStaleSimulation: settings.allowStaleSimulation },
       lastEvent: events[0] || null,
       events,
       openTrades,

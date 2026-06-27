@@ -51,7 +51,7 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 120,
-  notes: "Managed from v7.7 admin.",
+  notes: "Managed from v7.8 admin.",
 };
 
 function money(value: number) {
@@ -205,8 +205,8 @@ export default function AdminPage() {
       <header className="dash-header hero-readonly">
         <div>
           <span className="eyebrow">Private admin mode</span>
-          <h1>Market Setup Grader v7.7 Admin</h1>
-          <p>Use this page once to arm, pause, or tune the autonomous cloud paper bot. Share the homepage instead of this page.</p>
+          <h1>Market Setup Grader v7.8 Admin</h1>
+          <p>Private command center for the autonomous cloud paper bot. Tune it here, then share the homepage as a safe read-only viewer.</p>
         </div>
         <div className="dash-header-actions">
           <Link className="ghost-link" href="/">Viewer dashboard</Link>

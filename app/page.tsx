@@ -12,16 +12,31 @@ type CloudBotStatus = {
   configured: boolean;
   message: string;
   market?: { isOpen: boolean; label: string; reason: string };
-  settings?: { universeLabel: string; symbols: number; timeframe: string; maxOpenPositions: number; paperTradingEnabled: boolean };
+  settings?: {
+    enabled?: boolean;
+    universeLabel: string;
+    symbols: number;
+    timeframe: string;
+    maxOpenPositions: number;
+    paperTradingEnabled: boolean;
+    startingEquity?: number;
+    riskPct?: number;
+    scanLimit?: number;
+    minScore?: number;
+    maxScore?: number;
+    minRR?: number;
+    maxStaleMinutes?: number;
+    allowStaleSimulation?: boolean;
+  };
   lastEvent?: BotEvent | null;
   events?: BotEvent[];
   openTrades?: PaperTrade[];
   closedTrades?: PaperTrade[];
   scans?: ScanRun[];
 };
-type ScanRun = { id: string; created_at: string; universe_label?: string; timeframe?: string; candidates_count?: number; actionable_count?: number };
+type ScanRun = { id: string; created_at: string; universe_label?: string; timeframe?: string; symbols_count?: number; candidates_count?: number; actionable_count?: number; source?: string; reason?: string };
 type ScanSignal = { id: string; symbol: string; score?: number; bias?: string; setup?: string; rr?: number; entry?: number; stop?: number; target?: number; latest_time?: string; stale_minutes?: number; actionable?: boolean; warnings?: string[]; reasons?: string[]; raw?: any };
-type LatestSignals = { ok: boolean; configured: boolean; message?: string; scan: ScanRun | null; signals: ScanSignal[] };
+type LatestSignals = { ok: boolean; configured: boolean; message?: string; scan: ScanRun | null; signals: ScanSignal[]; displayed?: number; requestedLimit?: number; totalCandidates?: number };
 
 function money(value: number) {
   const prefix = value < 0 ? "-$" : "$";
@@ -34,8 +49,17 @@ function formatPrice(value?: number) {
   return n >= 100 ? n.toFixed(2) : n.toFixed(3);
 }
 
+function percent(value: number) {
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${value.toFixed(2)}%`;
+}
+
 function StatTile({ label, value, helper, tone }: { label: string; value: string | number; helper?: string; tone?: "good" | "warn" | "bad" }) {
   return <div className={`dash-tile ${tone || ""}`}><span>{label}</span><strong>{value}</strong>{helper ? <small>{helper}</small> : null}</div>;
+}
+
+function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "good" | "warn" | "bad" | "neutral" | "info" }) {
+  return <span className={`status-badge ${tone}`}>{children}</span>;
 }
 
 function signalStatus(row: ScanSignal) {
@@ -44,6 +68,17 @@ function signalStatus(row: ScanSignal) {
   if (row.warnings?.[0]) return row.warnings[0];
   if (row.reasons?.[0]) return row.reasons[0];
   return "Watched";
+}
+
+function signalTone(row: ScanSignal): "good" | "warn" | "bad" | "neutral" {
+  if (row.actionable) return "good";
+  if (row.stale_minutes && row.stale_minutes > 30) return "warn";
+  if (row.warnings?.[0]) return "bad";
+  return "neutral";
+}
+
+function cleanUniverseLabel(label?: string) {
+  return (label || "—").replace(/ · v\d+\.\d+.*$/i, "");
 }
 
 async function fetchBars(symbol: string, timeframe: Timeframe) {
@@ -62,6 +97,7 @@ export default function PublicDashboard() {
   const [selectedGrade, setSelectedGrade] = useState<GradeResult | null>(null);
   const [status, setStatus] = useState("Loading autonomous dashboard...");
   const [error, setError] = useState("");
+  const [signalLimit, setSignalLimit] = useState(100);
   const chartCache = useRef(new Map<string, { candles: Candle[]; grade: GradeResult | null; loadedAt: number }>());
 
   const openTrades = bot?.openTrades || [];
@@ -70,16 +106,27 @@ export default function PublicDashboard() {
   const scans = bot?.scans || [];
   const signals = latest?.signals || [];
   const latestScan = latest?.scan || scans[0] || null;
+  const lastBotEvent = bot?.lastEvent || null;
+  const startingEquity = Number(bot?.settings?.startingEquity || 5000);
   const realizedPnl = closedTrades.reduce((sum, trade) => sum + Number(trade.result_dollars || 0), 0);
   const unrealizedPnl = openTrades.reduce((sum, trade) => sum + Number(trade.unrealized_pnl || 0), 0);
-  const paperEquity = 5000 + realizedPnl + unrealizedPnl;
+  const paperEquity = startingEquity + realizedPnl + unrealizedPnl;
+  const returnPct = startingEquity ? ((paperEquity - startingEquity) / startingEquity) * 100 : 0;
   const selectedSignal = signals.find((s) => s.symbol === selectedSymbol);
+
+  const scanStats = useMemo(() => {
+    const total = Number(latestScan?.candidates_count || latest?.totalCandidates || signals.length || 0);
+    const actionable = Number(latestScan?.actionable_count || signals.filter((s) => s.actionable).length || 0);
+    const stale = signals.filter((s) => s.stale_minutes && s.stale_minutes > 30).length;
+    const shown = signals.length;
+    return { total, actionable, stale, shown };
+  }, [latestScan, latest, signals]);
 
   const loadDashboard = useCallback(async () => {
     try {
       const [botRes, latestRes] = await Promise.all([
         fetch("/api/bot/status", { cache: "no-store" }),
-        fetch("/api/cloud/latest-signals", { cache: "no-store" }),
+        fetch(`/api/cloud/latest-signals?limit=${signalLimit}`, { cache: "no-store" }),
       ]);
       const botData = await botRes.json();
       const latestData = await latestRes.json();
@@ -87,12 +134,12 @@ export default function PublicDashboard() {
       setLatest(latestData);
       const firstSymbol = latestData?.signals?.[0]?.symbol || botData?.openTrades?.[0]?.symbol || selectedSymbol;
       if (firstSymbol && firstSymbol !== selectedSymbol && !selectedCandles.length) setSelectedSymbol(firstSymbol);
-      setStatus(`Dashboard synced ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}.`);
+      setStatus(`Synced ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}. Viewer is read-only.`);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not refresh dashboard.");
     }
-  }, [selectedCandles.length, selectedSymbol]);
+  }, [selectedCandles.length, selectedSymbol, signalLimit]);
 
   const loadChart = useCallback(async (symbol: string) => {
     const normalized = symbol.toUpperCase();
@@ -127,57 +174,85 @@ export default function PublicDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSymbol]);
 
-  const botRunning = Boolean(bot?.settings?.paperTradingEnabled);
+  const botEngineRunning = bot?.settings?.enabled !== false;
+  const paperArmed = Boolean(bot?.settings?.paperTradingEnabled);
   const marketOpen = Boolean(bot?.market?.isOpen);
   const connected = Boolean(bot?.configured && latest?.configured !== false);
+  const selectedStatus = selectedSignal ? signalStatus(selectedSignal) : "No cloud signal selected yet.";
 
   return (
-    <main className="dash-shell public-shell">
-      <header className="dash-header hero-readonly">
-        <div>
-          <span className="eyebrow">Autonomous paper trading viewer</span>
-          <h1>Market Setup Grader v7.7</h1>
-          <p>This is the read-only dashboard. The cloud bot runs from the scheduled worker, saves its decisions to Supabase, and this page simply watches what happened. Real broker orders are still locked off.</p>
-        </div>
-        <div className="dash-header-actions">
-          <Link className="ghost-link" href="/admin">Admin</Link>
-          <Link className="ghost-link" href="/research">Research lab</Link>
-        </div>
+    <main className="dash-shell public-shell viewer-v78">
+      <header className="viewer-hero-grid">
+        <section className="viewer-hero-card">
+          <div className="viewer-version-row"><span className="eyebrow">Autonomous paper trading viewer</span><StatusBadge tone="info">v7.8</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+          <h1>Market Setup Grader</h1>
+          <p>The public page is now a live viewing area. The scheduled cloud worker makes paper-only decisions, Supabase stores the record, and this dashboard shows the bot’s state without giving visitors control.</p>
+          <div className="hero-quick-row">
+            <div><span>Current rules</span><strong>{bot?.settings?.universeLabel || "Loading"}</strong><small>{bot?.settings?.symbols || 0} symbols · {bot?.settings?.timeframe || "15Min"} · {bot?.settings?.riskPct || 1}% risk</small></div>
+            <div><span>Latest bot run</span><strong>{lastBotEvent ? formatDateTime(lastBotEvent.created_at) : "Waiting"}</strong><small>{lastBotEvent?.event_type || "No event yet"}</small></div>
+            <div><span>Latest saved scan</span><strong>{latestScan ? formatDateTime(latestScan.created_at) : "None"}</strong><small>{latestScan ? cleanUniverseLabel(latestScan.universe_label) : "Cron has not saved a scan yet"}</small></div>
+          </div>
+        </section>
+        <aside className="viewer-status-stack">
+          <Link className="ghost-link compact-link" href="/admin">Admin login</Link>
+          <Link className="ghost-link compact-link" href="/research">Research lab</Link>
+          <div className="run-state-card">
+            <span className={`state-dot ${botEngineRunning ? "good" : "warn"}`} />
+            <div><strong>{botEngineRunning ? "Bot engine running" : "Bot engine paused"}</strong><small>{paperArmed ? "Paper entries armed from admin" : "Paper entries disarmed"}</small></div>
+          </div>
+        </aside>
       </header>
 
-      <section className="console-topline">
-        <div className={`console-state ${botRunning ? "armed" : "warn"}`}><span>Autopilot</span><strong>{botRunning ? "Armed for paper" : "Paper entries paused"}</strong><small>{botRunning ? "Cron can open cloud paper trades when rules pass." : "The bot can scan, but paper entries are disabled from admin."}</small></div>
+      <section className="console-topline mission-strip">
+        <div className={`console-state ${botEngineRunning ? "armed" : "warn"}`}><span>Engine</span><strong>{botEngineRunning ? "Running" : "Paused"}</strong><small>{botEngineRunning ? "Cron can run scheduled cycles." : "Cron will skip until resumed in admin."}</small></div>
+        <div className={`console-state ${paperArmed ? "armed" : "warn"}`}><span>Paper execution</span><strong>{paperArmed ? "Armed" : "Disarmed"}</strong><small>{paperArmed ? "Paper trades may open when rules pass." : "Scanning is allowed; entries are blocked."}</small></div>
         <div className={`console-state ${marketOpen ? "armed" : "warn"}`}><span>Market</span><strong>{bot?.market?.label || "Loading"}</strong><small>{bot?.market?.reason || "Checking market guard."}</small></div>
-        <div className={`console-state ${connected ? "armed" : "warn"}`}><span>Cloud worker</span><strong>{connected ? "Scheduled" : "Not connected"}</strong><small>{bot?.lastEvent ? `Last: ${formatDateTime(bot.lastEvent.created_at)}` : "Waiting for the next cron/manual run."}</small></div>
-        <div className="console-state safe"><span>Latest scan</span><strong>{latestScan ? `${latestScan.actionable_count || 0}/${latestScan.candidates_count || 0} actionable` : "No scan yet"}</strong><small>{latestScan ? `${formatDateTime(latestScan.created_at)} · ${latestScan.universe_label || "cloud bot"}` : "Once cron runs, scan quality appears here."}</small></div>
+        <div className={`console-state ${connected ? "armed" : "warn"}`}><span>Cloud DB</span><strong>{connected ? "Connected" : "Not ready"}</strong><small>{bot?.message || latest?.message || "Supabase status"}</small></div>
       </section>
 
       <section className="dash-status-row">
-        <StatTile label="Paper equity" value={money(paperEquity)} helper={`${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={paperEquity >= 5000 ? "good" : "bad"} />
-        <StatTile label="Open positions" value={openTrades.length} helper={`${closedTrades.length} recent closed trades loaded`} />
-        <StatTile label="Universe" value={bot?.settings?.universeLabel || "—"} helper={`${bot?.settings?.symbols || 0} symbols · ${bot?.settings?.timeframe || "15Min"}`} />
-        <StatTile label="Cloud DB" value={connected ? "Connected" : "Not ready"} helper={bot?.message || latest?.message || "Supabase status"} tone={connected ? "good" : "warn"} />
+        <StatTile label="Paper equity" value={money(paperEquity)} helper={`${percent(returnPct)} total · ${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={paperEquity >= startingEquity ? "good" : "bad"} />
+        <StatTile label="Open cloud trades" value={openTrades.length} helper={`${closedTrades.length} recent closed trades loaded`} />
+        <StatTile label="Latest saved scan" value={`${scanStats.actionable}/${scanStats.total} actionable`} helper={`${scanStats.shown} displayed · ${scanStats.stale} shown stale/blocked`} tone={scanStats.actionable > 0 ? "good" : "warn"} />
+        <StatTile label="Share status" value="Viewer safe" helper="Visitors cannot arm, pause, clear, or change risk here." tone="good" />
       </section>
 
-      {error ? <div className="error-box">{error}</div> : <div className="execution-note">{status} Public viewers cannot change risk, arm the bot, clear trades, or manually run the worker.</div>}
+      {error ? <div className="error-box">{error}</div> : <div className="execution-note upgraded-note">{status} Last bot run and last saved scan are shown separately so market-closed skips do not look like missing scans.</div>}
 
-      <section className="dash-main-grid viewer-grid">
+      <section className="dash-main-grid viewer-grid viewer-grid-v78">
         <div className="dash-left-column">
-          <section className="dash-panel chart-panel">
+          <section className="dash-panel chart-panel pro-chart-panel">
             <div className="panel-heading-row">
               <div><h2>{selectedSymbol} chart</h2><p>{selectedGrade ? `${selectedGrade.bias} · score ${selectedGrade.score} · ${selectedGrade.setupType}` : "Click a signal, open trade, or symbol to inspect."}</p></div>
-              <span className="small-pill">Read-only</span>
+              <div className="panel-actions-mini"><StatusBadge tone="info">Read-only</StatusBadge>{selectedSignal ? <StatusBadge tone={signalTone(selectedSignal)}>{selectedStatus}</StatusBadge> : null}</div>
             </div>
             <TradingChart candles={selectedCandles} grade={selectedGrade} />
           </section>
 
-          <section className="dash-panel">
-            <div className="panel-heading-row"><div><h2>Latest ranked signals</h2><p>These are the newest cloud-saved scan results from Supabase.</p></div><span className="small-pill">{signals.length} loaded</span></div>
-            <div className="table-wrap compact live-table">
+          <section className="dash-panel signals-panel-v78">
+            <div className="signals-toolbar">
+              <div><h2>Latest ranked signals</h2><p>Showing the top saved signals from the latest completed scan. The bot may scan more names than this table displays.</p></div>
+              <div className="toolbar-controls">
+                <span className="small-pill">Top {signals.length} of {scanStats.total || signals.length}</span>
+                <select value={signalLimit} onChange={(e) => setSignalLimit(Number(e.target.value))} aria-label="Signal display limit">
+                  <option value={50}>Top 50</option>
+                  <option value={100}>Top 100</option>
+                  <option value={250}>Top 250</option>
+                  <option value={500}>Top 500</option>
+                </select>
+              </div>
+            </div>
+            <div className="scan-clarity-row">
+              <span>Universe scanned: <b>{cleanUniverseLabel(latestScan?.universe_label) || bot?.settings?.universeLabel || "—"}</b></span>
+              <span>Scan candidates: <b>{scanStats.total}</b></span>
+              <span>Executable: <b>{scanStats.actionable}</b></span>
+              <span>Displayed: <b>{signals.length}</b></span>
+            </div>
+            <div className="table-wrap compact live-table pro-table">
               <table>
                 <thead><tr><th>Symbol</th><th>Score</th><th>Bias</th><th>Setup</th><th>R/R</th><th>Entry</th><th>Status</th></tr></thead>
                 <tbody>
-                  {signals.length ? signals.slice(0, 50).map((row) => (
+                  {signals.length ? signals.map((row) => (
                     <tr key={row.id} className={`${row.symbol === selectedSymbol ? "selected-row" : ""} ${row.actionable ? "action-row" : ""}`} onClick={() => void loadChart(row.symbol)}>
                       <td><button className="text-button">{row.symbol}</button></td>
                       <td>{row.score ?? "—"}</td>
@@ -185,7 +260,7 @@ export default function PublicDashboard() {
                       <td>{row.setup || "—"}</td>
                       <td>{row.rr ? Number(row.rr).toFixed(2) : "—"}</td>
                       <td>{formatPrice(row.entry)}</td>
-                      <td>{signalStatus(row)}</td>
+                      <td><StatusBadge tone={signalTone(row)}>{signalStatus(row)}</StatusBadge></td>
                     </tr>
                   )) : <tr><td colSpan={7}>No cloud scan signals yet. Wait for the next cron run or run once from /admin.</td></tr>}
                 </tbody>
@@ -194,8 +269,8 @@ export default function PublicDashboard() {
           </section>
         </div>
 
-        <aside className="dash-right-column">
-          <section className="dash-panel selected-card">
+        <aside className="dash-right-column right-rail-v78">
+          <section className="dash-panel selected-card pro-selected-card">
             <h2>{selectedSymbol}</h2>
             <div className="selected-score"><span>{selectedSignal?.score ?? selectedGrade?.score ?? "—"}</span><div><strong>{selectedSignal?.bias || selectedGrade?.bias || "Watch"}</strong><small>{selectedSignal?.setup || selectedGrade?.setupType || "No current signal"}</small></div></div>
             <div className="mini-stack">
@@ -204,11 +279,11 @@ export default function PublicDashboard() {
               <StatTile label="Target" value={formatPrice(selectedSignal?.target ?? selectedGrade?.target)} />
               <StatTile label="R/R" value={selectedSignal?.rr ? `${Number(selectedSignal.rr).toFixed(2)}:1` : selectedGrade ? `${selectedGrade.rr}:1` : "—"} />
             </div>
-            <p className="setup-summary">{selectedSignal ? signalStatus(selectedSignal) : "No cloud signal selected yet."}</p>
+            <p className="setup-summary">{selectedStatus}</p>
           </section>
 
           <section className="dash-panel cloud-bot-panel">
-            <div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>These are server-side paper trades. No broker orders were placed.</p></div><span className="small-pill">{openTrades.length}</span></div>
+            <div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>Server-side paper trades saved in Supabase. No broker orders.</p></div><span className="small-pill">{openTrades.length}</span></div>
             <div className="position-list">
               {openTrades.length ? openTrades.map((p) => (
                 <div key={p.id} className="position-row open" onClick={() => void loadChart(p.symbol)}>
@@ -219,10 +294,10 @@ export default function PublicDashboard() {
             </div>
           </section>
 
-          <section className="dash-panel">
-            <h2>Cloud bot activity</h2>
-            <div className="activity-list">
-              {events.length ? events.slice(0, 12).map((event) => <div key={event.id}>{formatDateTime(event.created_at)} · {event.message}</div>) : <p className="muted">No cloud events yet.</p>}
+          <section className="dash-panel event-panel-v78">
+            <div className="panel-heading-row"><div><h2>Cloud bot activity</h2><p>Every cron/manual event appears here.</p></div></div>
+            <div className="activity-list timeline-list">
+              {events.length ? events.slice(0, 12).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{event.message}</span></div>) : <p className="muted">No cloud events yet.</p>}
             </div>
           </section>
 
