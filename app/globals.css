@@ -932,3 +932,264 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* v7.5 paper-live execution console polish */
+:root {
+  --glass: rgba(15, 23, 42, 0.72);
+  --glass-strong: rgba(15, 23, 42, 0.92);
+  --cyan: #22d3ee;
+  --blue: #3b82f6;
+  --lime: #84cc16;
+}
+
+body {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(34, 211, 238, 0.18), transparent 28%),
+    radial-gradient(circle at 80% 0%, rgba(37, 99, 235, 0.18), transparent 32%),
+    linear-gradient(180deg, #050914 0%, #07101f 45%, #050914 100%);
+}
+
+.dash-shell {
+  max-width: 1560px;
+  padding: 28px 28px 86px;
+}
+
+.dash-header {
+  padding: 20px 4px 4px;
+  margin-bottom: 16px;
+}
+
+.dash-header h1 {
+  letter-spacing: -0.065em;
+  text-shadow: 0 16px 54px rgba(56, 189, 248, 0.12);
+}
+
+.dash-header p {
+  max-width: 880px;
+  font-size: 1rem;
+  color: #bfdbfe;
+}
+
+.dash-header-actions {
+  position: sticky;
+  top: 12px;
+  z-index: 8;
+  padding: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 18px;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(14px);
+}
+
+.arm-button {
+  border-color: rgba(34, 197, 94, 0.42) !important;
+  color: #dcfce7 !important;
+  background: rgba(20, 83, 45, 0.45) !important;
+}
+
+.console-topline {
+  display: grid;
+  grid-template-columns: 1.05fr 1.1fr 1fr 1.25fr;
+  gap: 12px;
+  margin: 0 0 14px;
+}
+
+.console-state {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(2, 6, 23, 0.72));
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.console-state span {
+  display: block;
+  color: #93c5fd;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.console-state strong {
+  display: block;
+  font-size: 1.12rem;
+  color: #f8fafc;
+}
+
+.console-state small {
+  display: block;
+  margin-top: 5px;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.console-state.armed {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: linear-gradient(180deg, rgba(22, 101, 52, 0.34), rgba(2, 6, 23, 0.72));
+}
+
+.console-state.safe {
+  border-color: rgba(56, 189, 248, 0.24);
+}
+
+.console-state.warn {
+  border-color: rgba(245, 158, 11, 0.52);
+  background: linear-gradient(180deg, rgba(120, 53, 15, 0.28), rgba(2, 6, 23, 0.72));
+}
+
+.dash-status-row {
+  grid-template-columns: 1.1fr 0.9fr 0.9fr 1.1fr;
+  gap: 12px;
+}
+
+.dash-tile,
+.dash-command-card,
+.dash-panel,
+.panel-lite {
+  border-color: rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.86), rgba(9, 15, 28, 0.84));
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.025);
+}
+
+.dash-command-card {
+  padding: 16px;
+  border-radius: 24px;
+  margin-bottom: 14px;
+}
+
+.command-left {
+  grid-template-columns: 1.25fr 0.65fr 0.9fr 0.65fr;
+  gap: 10px;
+}
+
+.command-actions {
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 12px;
+}
+
+.execution-note {
+  margin-top: 8px;
+  color: #bfdbfe;
+  border: 1px solid rgba(56, 189, 248, 0.16);
+  background: rgba(14, 165, 233, 0.06);
+  border-radius: 12px;
+  padding: 9px 11px;
+  font-size: 0.82rem;
+}
+
+.dash-main-grid {
+  grid-template-columns: minmax(0, 1fr) 410px;
+  gap: 16px;
+}
+
+.chart-panel .chart-wrap {
+  min-height: 520px;
+}
+
+.dash-panel {
+  border-radius: 24px;
+  padding: 18px;
+}
+
+.panel-heading-row h2, .dash-panel h2 {
+  letter-spacing: -0.02em;
+}
+
+.live-table table {
+  min-width: 860px;
+}
+
+.live-table th,
+.live-table td {
+  padding: 11px 12px;
+}
+
+.live-table tbody tr {
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.live-table tbody tr:hover td {
+  background: rgba(34, 211, 238, 0.08);
+}
+
+.action-row td {
+  background: rgba(34, 197, 94, 0.055);
+}
+
+.selected-card {
+  position: sticky;
+  top: 112px;
+}
+
+.order-ticket {
+  border: 1px solid rgba(56, 189, 248, 0.24);
+  background: linear-gradient(180deg, rgba(14, 165, 233, 0.12), rgba(2, 6, 23, 0.24));
+  border-radius: 16px;
+  padding: 12px;
+  margin: 10px 0 12px;
+}
+
+.order-ticket span {
+  display: block;
+  color: #93c5fd;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.order-ticket strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1rem;
+}
+
+.order-ticket small {
+  display: block;
+  color: #94a3b8;
+  margin: 6px 0 10px;
+  line-height: 1.35;
+}
+
+.full-button {
+  width: 100%;
+}
+
+.position-row {
+  grid-template-columns: 1fr auto auto;
+  border-radius: 16px;
+  padding: 11px 12px;
+}
+
+.activity-list div,
+.cloud-mini-list div {
+  border-left-color: rgba(34, 211, 238, 0.36);
+  background: rgba(15, 23, 42, 0.58);
+}
+
+button {
+  border-radius: 13px;
+  min-height: 40px;
+  box-shadow: 0 10px 28px rgba(37, 99, 235, 0.18);
+}
+
+button.secondary, .ghost-link {
+  box-shadow: none;
+}
+
+input, select, textarea {
+  background: rgba(2, 8, 23, 0.78);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+@media (max-width: 1200px) {
+  .console-topline,
+  .dash-status-row,
+  .dash-main-grid {
+    grid-template-columns: 1fr;
+  }
+  .selected-card {
+    position: static;
+  }
+}

@@ -81,9 +81,9 @@ type CloudRunSummary = {
 };
 
 const TIMEFRAMES: Timeframe[] = ["1Min", "5Min", "15Min", "30Min", "1Hour"];
-const POSITIONS_KEY = "market-setup-grader-v7-4-paper-positions";
-const ACTIVITY_KEY = "market-setup-grader-v7-4-activity";
-const SETTINGS_KEY = "market-setup-grader-v7-4-settings";
+const POSITIONS_KEY = "market-setup-grader-v7-5-paper-positions";
+const ACTIVITY_KEY = "market-setup-grader-v7-5-activity";
+const SETTINGS_KEY = "market-setup-grader-v7-5-settings";
 
 const CORE_9_SYMBOLS = "AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, SPY, QQQ";
 const SUPER_WIDE_100_SYMBOLS = "SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLY, XLV, XLI, PYPL, DIS, AAPL, NVDA, TSLA, MSFT, AMD, WMT, XOM, KO, JNJ, NFLX, JPM, GOOGL, AMZN, AVGO, COST, V, MA, LLY, UNH, HD, NKE, CRM, MCD, CAT, GE, META, ORCL, IBM, NOW, ADBE, INTU, PLTR, MU, QCOM, TXN, MRK, ABBV, TMO, PEP, SBUX, BA, GS, BAC, CVX, COP, C, MS, BLK, SCHW, AMAT, LRCX, KLAC, INTC, CSCO, PANW, CRWD, SNOW, SHOP, UBER, ABNB, BKNG, TGT, LOW, TJX, PG, CL, EL, MRNA, PFE, ISRG, DHR, CVS, WBA, DE, HON, UPS, FDX, GM, F, RTX, LMT, NOC, LIN, APD, FCX, SLB, OXY, T";
@@ -125,6 +125,17 @@ function formatPrice(value: number) {
 
 function safeLatestPrice(candles: Candle[]) {
   return candles[candles.length - 1]?.close || 0;
+}
+
+function candidateStatusLabel(row: Partial<LiveScanCandidate>, maxStaleMinutes = 30, allowStaleSimulation = false) {
+  if (!row.symbol) return "Watch";
+  if (row.actionable) return "Executable paper signal";
+  if (row.bias === "Error") return row.warnings?.[0] || "Data/API error";
+  if (!allowStaleSimulation && typeof row.staleMinutes === "number" && row.staleMinutes > maxStaleMinutes) return "Blocked: stale / market closed";
+  if (row.bias === "Neutral") return "Watch: no directional setup";
+  if (typeof row.rr === "number" && row.rr > 0 && row.rr < 1) return "Blocked: R/R below rule";
+  if (row.warnings?.[0]) return row.warnings[0];
+  return "Watch";
 }
 
 function createPosition(candidate: LiveScanCandidate, settings: { equity: number; riskPct: number; maxPositionPct: number; timeframe: Timeframe; }): PaperPosition | null {
@@ -244,6 +255,8 @@ export default function Home() {
   const [isSavingCloud, setIsSavingCloud] = useState(false);
   const [isCheckingCloud, setIsCheckingCloud] = useState(false);
   const [autoScan, setAutoScan] = useState(false);
+  const [paperArmed, setPaperArmed] = useState(false);
+  const [allowStaleSimulation, setAllowStaleSimulation] = useState(false);
   const [refreshSeconds, setRefreshSeconds] = useState(300);
   const [progress, setProgress] = useState({ current: "", done: 0, total: 0 });
   const [showSettings, setShowSettings] = useState(false);
@@ -296,6 +309,8 @@ export default function Home() {
         if (saved.minScore) setMinScore(saved.minScore);
         if (saved.maxScore) setMaxScore(saved.maxScore);
         if (saved.minRR) setMinRR(saved.minRR);
+        if (typeof saved.paperArmed === "boolean") setPaperArmed(saved.paperArmed);
+        if (typeof saved.allowStaleSimulation === "boolean") setAllowStaleSimulation(saved.allowStaleSimulation);
       }
     } catch {
       // Keep the dashboard usable even if local storage is malformed.
@@ -311,8 +326,8 @@ export default function Home() {
   }, [activity]);
 
   useEffect(() => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ timeframe, universeLabel, symbolsText, startingEquity, riskPct, maxPositionPct, maxOpenPositions, minScore, maxScore, minRR }));
-  }, [timeframe, universeLabel, symbolsText, startingEquity, riskPct, maxPositionPct, maxOpenPositions, minScore, maxScore, minRR]);
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ timeframe, universeLabel, symbolsText, startingEquity, riskPct, maxPositionPct, maxOpenPositions, minScore, maxScore, minRR, paperArmed, allowStaleSimulation }));
+  }, [timeframe, universeLabel, symbolsText, startingEquity, riskPct, maxPositionPct, maxOpenPositions, minScore, maxScore, minRR, paperArmed, allowStaleSimulation]);
 
   const targetSettings = useMemo(() => ({ mode: targetMode, fixedR: fixedTargetR, atrMultiple: atrTargetMultiple }), [targetMode, fixedTargetR, atrTargetMultiple]);
   const gradeSettings = useMemo(() => ({ profile: gradeProfile }), [gradeProfile]);
@@ -358,7 +373,7 @@ export default function Home() {
     const latestTime = scanCandles[scanCandles.length - 1]?.time || g.latestCandleTime || "";
     const staleMinutes = latestTime ? Math.max(0, Math.round((Date.now() - new Date(latestTime).getTime()) / 60000)) : 999999;
     const rr = Number.isFinite(g.rr) ? g.rr : 0;
-    const isFreshEnough = mode === "Research" || staleMinutes <= maxStaleMinutes;
+    const isFreshEnough = allowStaleSimulation || mode === "Research" || staleMinutes <= maxStaleMinutes;
     const actionableRow = g.bias !== "Neutral" && g.score >= minScore && g.score <= maxScore && rr >= minRR && isFreshEnough;
     const priority = (actionableRow ? 1000 : 0) + g.score * 10 + rr - Math.min(staleMinutes, 500) / 100;
     return {
@@ -380,7 +395,7 @@ export default function Home() {
       warnings: g.warnings || [],
       lastPrice: safeLatestPrice(scanCandles),
     };
-  }, [maxScore, maxStaleMinutes, minRR, minScore, mode]);
+  }, [allowStaleSimulation, maxScore, maxStaleMinutes, minRR, minScore, mode]);
 
   const runLiveScan = useCallback(async (reason = "manual") => {
     if (scanInFlight.current) return [] as LiveScanCandidate[];
@@ -452,11 +467,11 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          reason: "v7.4-live-dashboard-save",
+          reason: "v7.5-live-trader-console-save",
           source: dataSource,
           timeframe,
           mode,
-          universeLabel: `${universeLabel} · v7.4 paper dashboard`,
+          universeLabel: `${universeLabel} · v7.5 paper execution console`,
           symbolsCount: symbols.length,
           startedAt: new Date().toISOString(),
           finishedAt: new Date().toISOString(),
@@ -513,6 +528,11 @@ export default function Home() {
   }, []);
 
   const openTopPaperTrades = useCallback((rows = candidates) => {
+    if (!paperArmed) {
+      setStatus("Paper execution is disarmed. Arm the paper bot before opening simulated trades.");
+      addActivity("Paper execution blocked: bot is disarmed.");
+      return [] as PaperPosition[];
+    }
     const currentOpen = positions.filter((p) => p.status === "Open");
     const openSymbols = new Set(currentOpen.map((p) => p.symbol));
     const slots = Math.max(0, maxOpenPositions - currentOpen.length);
@@ -530,7 +550,7 @@ export default function Home() {
     addActivity(`Opened ${nextPositions.length} paper trade(s): ${nextPositions.map((p) => p.symbol).join(", ")}.`);
     setStatus(`Opened ${nextPositions.length} paper trade(s). No broker orders placed.`);
     return nextPositions;
-  }, [addActivity, candidates, currentEquity, maxOpenPositions, maxPositionPct, positions, riskPct, timeframe]);
+  }, [addActivity, candidates, currentEquity, maxOpenPositions, maxPositionPct, paperArmed, positions, riskPct, timeframe]);
 
   const runBotCycle = useCallback(async () => {
     const rows = await runLiveScan("bot cycle");
@@ -605,21 +625,61 @@ export default function Home() {
 
   const statusTone = cloudHealth?.configured ? "good" : "warn";
   const selectedCandidate = candidates.find((c) => c.symbol === selectedSymbol);
+  const staleBlocked = candidates.filter((c) => c.staleMinutes > maxStaleMinutes && !allowStaleSimulation && mode !== "Research").length;
+  const rrBlocked = candidates.filter((c) => c.bias !== "Neutral" && c.rr < minRR).length;
+  const scoreBlocked = candidates.filter((c) => c.bias !== "Neutral" && (c.score < minScore || c.score > maxScore)).length;
+  const neutralBlocked = candidates.filter((c) => c.bias === "Neutral").length;
+  const lastCandleIso = selectedCandidate?.latestTime || selectedGrade?.latestCandleTime || selectedCandles[selectedCandles.length - 1]?.time || "";
+  const lastCandleText = lastCandleIso ? new Date(lastCandleIso).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZoneName: "short" }) : "No candle loaded";
+  const selectedStaleMinutes = selectedCandidate?.staleMinutes ?? selectedGrade?.staleMinutes ?? (lastCandleIso ? Math.max(0, Math.round((Date.now() - new Date(lastCandleIso).getTime()) / 60000)) : 999999);
+  const dataFresh = allowStaleSimulation || mode === "Research" || selectedStaleMinutes <= maxStaleMinutes;
+  const botStateLabel = paperArmed ? "Paper armed" : "Disarmed";
+  const tradeButtonReason = !paperArmed
+    ? "Arm paper bot first"
+    : !candidates.length
+      ? "Run scan first"
+      : !actionable.length
+        ? "0 executable setups"
+        : `Open ${Math.min(actionable.length, Math.max(0, maxOpenPositions - openPositions.length))} paper trade(s)`;
 
   return (
     <main className="dash-shell">
       <header className="dash-header">
         <div>
-          <div className="eyebrow">Paper-live trading dashboard</div>
-          <h1>Market Setup Grader v7.4</h1>
-          <p>Simple live dashboard for paper trading: scan stocks, open paper positions, track the portfolio, and inspect the bot's decisions. No real broker orders are placed.</p>
+          <div className="eyebrow">Paper-live execution console</div>
+          <h1>Market Setup Grader v7.5</h1>
+          <p>Paper-live trading console: monitor the account, scan the universe, stage paper entries, track open positions, and review every bot decision. Real broker orders are still locked off.</p>
         </div>
         <div className="dash-header-actions">
-          <a className="secondary ghost-link" href="/research">Open old research lab</a>
+          <a className="secondary ghost-link" href="/research">Research lab</a>
           <button className="secondary" onClick={() => setShowSettings((v) => !v)}>{showSettings ? "Hide settings" : "Bot settings"}</button>
+          <button className={paperArmed ? "danger" : "secondary arm-button"} onClick={() => setPaperArmed((v) => !v)}>{paperArmed ? "Disarm paper bot" : "Arm paper bot"}</button>
           <button onClick={() => void runBotCycle()} disabled={isScanning || isSavingCloud}>{isScanning ? `Scanning ${progress.current || "..."}` : "Run bot cycle"}</button>
         </div>
       </header>
+
+      <section className="console-topline">
+        <div className={`console-state ${paperArmed ? "armed" : "safe"}`}>
+          <span>Execution state</span>
+          <strong>{botStateLabel}</strong>
+          <small>{paperArmed ? "Paper entries can be opened. Real broker orders are locked off." : "Scans and cloud logs are allowed. Entries are blocked."}</small>
+        </div>
+        <div className={`console-state ${dataFresh ? "armed" : "warn"}`}>
+          <span>Data freshness</span>
+          <strong>{dataFresh ? "Usable" : "Stale / market closed"}</strong>
+          <small>Last candle: {lastCandleText}</small>
+        </div>
+        <div className="console-state safe">
+          <span>Broker connection</span>
+          <strong>Paper only</strong>
+          <small>No real-money order route is enabled in this build.</small>
+        </div>
+        <div className="console-state">
+          <span>Scan quality</span>
+          <strong>{candidates.length ? `${actionable.length}/${candidates.length} executable` : "Waiting"}</strong>
+          <small>{candidates.length ? `${staleBlocked} stale · ${scoreBlocked} score · ${rrBlocked} R/R blocked` : "Run a scan to populate the trade queue."}</small>
+        </div>
+      </section>
 
       <section className="dash-status-row">
         <StatTile label="Paper equity" value={money(currentEquity)} helper={`${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={currentEquity >= startingEquity ? "good" : "bad"} />
@@ -658,12 +718,13 @@ export default function Home() {
         </div>
         <div className="command-actions">
           <button onClick={() => void runLiveScan("manual")} disabled={isScanning}>{isScanning ? "Scanning..." : "Scan now"}</button>
-          <button className="secondary" onClick={() => openTopPaperTrades()} disabled={!actionable.length}>Open top paper trades</button>
+          <button className="secondary" title={tradeButtonReason} onClick={() => openTopPaperTrades()} disabled={!paperArmed || !actionable.length}>{tradeButtonReason}</button>
           <button className="secondary" onClick={() => void checkOpenPositions()} disabled={isCheckingPositions || !openPositions.length}>{isCheckingPositions ? "Checking..." : "Check positions"}</button>
           <button className="secondary" onClick={() => void saveScanToCloud()} disabled={isSavingCloud || !candidates.length}>{isSavingCloud ? "Saving..." : "Save scan"}</button>
         </div>
         {isScanning ? <div className="scan-progress"><span style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} /> <b>{progress.current}</b> {progress.done}/{progress.total}</div> : null}
         <div className="status-line">{status}</div>
+        <div className="execution-note">{paperArmed ? "Paper execution armed: the bot may open simulated trades when candidates pass rules." : "Execution disarmed: the bot can scan and save data, but it will not open paper trades."} {allowStaleSimulation ? "Weekend/stale simulation override is ON." : "Fresh-data guard is ON."}</div>
         {error ? <div className="error-box">{error}</div> : null}
       </section>
 
@@ -681,6 +742,8 @@ export default function Home() {
             <label>Min R/R <input type="number" step="0.1" value={minRR} onChange={(e) => setMinRR(Number(e.target.value) || 1)} /></label>
             <label>Max stale minutes <input type="number" value={maxStaleMinutes} onChange={(e) => setMaxStaleMinutes(Number(e.target.value) || 30)} /></label>
             <label>Refresh seconds <input type="number" min={60} value={refreshSeconds} onChange={(e) => setRefreshSeconds(Number(e.target.value) || 300)} /></label>
+            <label>Paper execution <select value={paperArmed ? "armed" : "disarmed"} onChange={(e) => setPaperArmed(e.target.value === "armed")}><option value="disarmed">Disarmed</option><option value="armed">Armed paper-only</option></select></label>
+            <label>Stale simulation <select value={allowStaleSimulation ? "on" : "off"} onChange={(e) => setAllowStaleSimulation(e.target.value === "on")}><option value="off">OFF: block stale candles</option><option value="on">ON: paper test only</option></select></label>
             <label>Data source <select value={dataSource} onChange={(e) => setDataSource(e.target.value as ApiDataSource)}><option value="Alpaca">Alpaca</option><option value="Massive">Massive</option></select></label>
             <label>Data mode <select value={mode} onChange={(e) => setMode(e.target.value as AppMode)}><option value="Live">Live: stale signals blocked</option><option value="Research">Research: delayed/stale allowed</option></select></label>
             <label>Grader profile <select value={gradeProfile} onChange={(e) => setGradeProfile(e.target.value as GradeProfile)}><option value="Pullback">Pullback/reclaim</option><option value="Balanced">Balanced</option><option value="Breakout">Breakout</option></select></label>
@@ -719,7 +782,7 @@ export default function Home() {
                       <td>{row.setup || "—"}</td>
                       <td>{row.rr ? row.rr.toFixed(2) : "—"}</td>
                       <td>{row.lastPrice ? formatPrice(row.lastPrice) : "—"}</td>
-                      <td>{row.actionable ? "Paper candidate" : row.warnings?.[0] || "Watch"}</td>
+                      <td>{candidateStatusLabel(row, maxStaleMinutes, allowStaleSimulation)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -739,6 +802,11 @@ export default function Home() {
               <StatTile label="R/R" value={selectedGrade ? `${selectedGrade.rr}:1` : "—"} />
             </div>
             {selectedCandidate ? <p className="setup-summary">{selectedCandidate.actionable ? "This setup passes current paper rules." : "This setup does not currently pass paper rules."} {selectedCandidate.warnings[0] || selectedCandidate.reasons[0] || "Review chart and rules before taking action."}</p> : null}
+            {selectedCandidate ? <div className="order-ticket">
+              <div><span>Paper ticket</span><strong>{selectedCandidate.symbol} · {selectedCandidate.bias}</strong></div>
+              <small>Qty is calculated from {pct(riskPct)} risk and {pct(maxPositionPct)} max position cap.</small>
+              <button className="secondary full-button" disabled={!paperArmed || !selectedCandidate.actionable} onClick={() => openTopPaperTrades([selectedCandidate])}>{paperArmed ? (selectedCandidate.actionable ? "Open this paper trade" : "Signal blocked by rules") : "Arm paper bot first"}</button>
+            </div> : null}
             {selectedPosition ? <div className="position-note"><strong>{selectedPosition.status} paper position</strong><br />Entry {formatPrice(selectedPosition.entry)} · Last {formatPrice(selectedPosition.lastPrice)} · P/L {money((selectedPosition.realizedPnl || 0) + selectedPosition.unrealizedPnl)}</div> : null}
           </section>
 
