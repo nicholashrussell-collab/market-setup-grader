@@ -208,6 +208,29 @@ type LiveScanCandidate = {
   warnings: string[];
 };
 
+type CloudHealth = {
+  configured: boolean;
+  hasUrl?: boolean;
+  hasServiceRoleKey?: boolean;
+  urlHost?: string | null;
+  message?: string;
+  checkedAt?: string;
+};
+
+type CloudRunSummary = {
+  id: string;
+  created_at: string;
+  finished_at: string | null;
+  status: string;
+  reason: string | null;
+  source: string | null;
+  timeframe: string | null;
+  universe_label: string | null;
+  symbols_count: number | null;
+  candidates_count: number | null;
+  actionable_count: number | null;
+};
+
 type AccountBatchConfig = {
   label: string;
   maxPositionPct: number;
@@ -1962,6 +1985,10 @@ export default function Home() {
   const [liveLastScan, setLiveLastScan] = useState("");
   const [isLiveBasketScanning, setIsLiveBasketScanning] = useState(false);
   const liveBasketScanInFlight = useRef(false);
+  const [cloudHealth, setCloudHealth] = useState<CloudHealth | null>(null);
+  const [cloudRuns, setCloudRuns] = useState<CloudRunSummary[]>([]);
+  const [isCheckingCloud, setIsCheckingCloud] = useState(false);
+  const [isSavingCloudScan, setIsSavingCloudScan] = useState(false);
 
   const targetSettings = useMemo(() => ({
     mode: targetMode,
@@ -2222,6 +2249,85 @@ export default function Home() {
     setJournal((prev) => [...nextTrades, ...prev]);
     setStatus(`Saved ${nextTrades.length} live watchlist candidate(s) to the paper journal. These are paper trades only, not broker orders.`);
   }, [liveCandidates, basketMaxOpenTrades, journal, timeframe, mode, noOvernightHolds]);
+
+  const loadRecentCloudRuns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cloud/recent?limit=5", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || "Could not load recent cloud scans.");
+      setCloudRuns(Array.isArray(data.runs) ? data.runs : []);
+      if (typeof data.configured === "boolean") {
+        setCloudHealth((prev) => ({ ...(prev || { configured: data.configured }), configured: data.configured, message: data.message || prev?.message }));
+      }
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Could not load recent cloud scans.");
+    }
+  }, []);
+
+  const checkCloudStatus = useCallback(async () => {
+    setIsCheckingCloud(true);
+    try {
+      const res = await fetch("/api/cloud/health", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || data.error || "Cloud health check failed.");
+      setCloudHealth(data);
+      setStatus(data.configured ? `Cloud DB configured (${data.urlHost}).` : data.message || "Cloud DB is not configured yet.");
+      await loadRecentCloudRuns();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Cloud health check failed.";
+      setCloudHealth({ configured: false, message });
+      setStatus(message);
+    } finally {
+      setIsCheckingCloud(false);
+    }
+  }, [loadRecentCloudRuns]);
+
+  const saveLiveScanToCloud = useCallback(async () => {
+    if (!liveCandidates.length) {
+      setStatus("Run the live watchlist scanner before saving to the cloud database.");
+      return;
+    }
+    setIsSavingCloudScan(true);
+    try {
+      const symbols = Array.from(new Set(basketSymbols.split(/[,:\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean))).slice(0, 600);
+      const res = await fetch("/api/cloud/save-live-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: "manual-live-watchlist",
+          source: marketDataSource,
+          timeframe,
+          mode,
+          universeLabel: `${symbols.length}-symbol ${ACCOUNT_POLICY_LABELS[basketAccountPolicy]}`,
+          symbolsCount: symbols.length,
+          startedAt: liveLastScan || new Date().toISOString(),
+          finishedAt: new Date().toISOString(),
+          settings: {
+            accountPolicy: basketAccountPolicy,
+            accountPolicyLabel: ACCOUNT_POLICY_LABELS[basketAccountPolicy],
+            minScore,
+            maxScore,
+            minRR,
+            maxStaleMinutes,
+            maxOpenTrades: basketMaxOpenTrades,
+            maxTotalRiskPct: basketMaxTotalRisk,
+            riskPct: btRiskPercent,
+            maxPositionPct: btMaxPositionPct,
+            noOvernightHolds,
+          },
+          candidates: liveCandidates,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.message || data.error || "Cloud save failed.");
+      setStatus(`Saved live scan to cloud DB: ${data.savedSignals} signals, ${data.actionableCount} actionable. No broker orders placed.`);
+      await loadRecentCloudRuns();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Cloud save failed.");
+    } finally {
+      setIsSavingCloudScan(false);
+    }
+  }, [liveCandidates, basketSymbols, marketDataSource, timeframe, mode, basketAccountPolicy, minScore, maxScore, minRR, maxStaleMinutes, basketMaxOpenTrades, basketMaxTotalRisk, btRiskPercent, btMaxPositionPct, noOvernightHolds, liveLastScan, loadRecentCloudRuns]);
 
   useEffect(() => {
     if (!liveRefresh) return;
@@ -3107,7 +3213,7 @@ export default function Home() {
       <header className="hero">
         <div>
           <div className="eyebrow">Research lab / paper-trading prep</div>
-          <h1>Market Setup Grader v7.2</h1>
+          <h1>Market Setup Grader v7.3</h1>
           <p>
             v7.2 keeps the active-only quality gate and adds a Super Wide 500 stress-test universe. Use 100 stocks for paper-live stability and 500 stocks for research/cloud-readiness testing.
           </p>
@@ -3743,7 +3849,37 @@ export default function Home() {
             <div className="row-actions">
               <button className="primary small" onClick={() => void runLiveBasketScan("manual")} disabled={isLiveBasketScanning}>{isLiveBasketScanning ? "Scanning..." : "Scan Live Watchlist Now"}</button>
               <button className="secondary small" onClick={saveActionableLiveCandidates} disabled={!liveCandidates.some((r) => r.actionable)}>Save actionable to paper journal</button>
+              <button className="secondary small" onClick={() => void checkCloudStatus()} disabled={isCheckingCloud}>{isCheckingCloud ? "Checking cloud..." : "Check cloud DB"}</button>
+              <button className="secondary small" onClick={() => void saveLiveScanToCloud()} disabled={!liveCandidates.length || isSavingCloudScan}>{isSavingCloudScan ? "Saving cloud..." : "Save scan to cloud DB"}</button>
             </div>
+            <div className="cloud-status-grid">
+              <div className={`pill-card ${cloudHealth?.configured ? "good" : "warn"}`}>
+                <span>Cloud DB</span>
+                <strong>{cloudHealth ? (cloudHealth.configured ? "Configured" : "Not configured") : "Not checked"}</strong>
+                <small>{cloudHealth?.urlHost || cloudHealth?.message || "Add Supabase env vars, then check status."}</small>
+              </div>
+              <div className="pill-card">
+                <span>Recent saved scans</span>
+                <strong>{cloudRuns.length}</strong>
+                <small>{cloudRuns[0] ? `${cloudRuns[0].actionable_count || 0} actionable · ${formatDateTime(cloudRuns[0].created_at)}` : "No cloud scans loaded yet."}</small>
+              </div>
+            </div>
+            {cloudRuns.length ? (
+              <div className="table-wrap compact mini-cloud-table">
+                <table>
+                  <thead><tr><th>Saved</th><th>Universe</th><th>TF</th><th>Signals</th><th>Actionable</th></tr></thead>
+                  <tbody>{cloudRuns.map((r) => (
+                    <tr key={r.id}>
+                      <td>{formatDateTime(r.created_at)}</td>
+                      <td>{r.universe_label || "—"}</td>
+                      <td>{r.timeframe || "—"}</td>
+                      <td>{r.candidates_count ?? 0}</td>
+                      <td>{r.actionable_count ?? 0}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            ) : null}
             {liveCandidates.length ? (
               <div className="table-wrap compact">
                 <table>
@@ -3763,7 +3899,7 @@ export default function Home() {
                 </table>
               </div>
             ) : null}
-            <p className="muted tiny">Localhost stops when your computer sleeps or the tab/server closes. To run unattended, deploy this app and a worker/cron process on a cloud host/VPS with a small database for journaled scans.</p>
+            <p className="muted tiny">v7.3 can save manual live-scan results to Supabase. This is still paper/signals only; the later Railway worker will run scans automatically while your laptop is off.</p>
           </div>
           {researchMode && basketCandidateSummary ? <CachedCandidateSetCard summary={basketCandidateSummary} /> : null}
           {researchMode && modelComparisons.length ? <ModelComparisonTable rows={modelComparisons} /> : null}

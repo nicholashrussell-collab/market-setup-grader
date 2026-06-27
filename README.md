@@ -1,4 +1,4 @@
-# Market Setup Grader v7.2
+# Market Setup Grader v7.3 Cloud DB Prep v7.2
 
 v7.1 is an active-only Super Wide 100 scanner with a rolling symbol-quality gate. It keeps the live/paper workflow clean and pushes sleeve diagnostics into Research View.
 
@@ -47,3 +47,10 @@ See `CLOUD_DEPLOYMENT.md` for the cloud/VPS plan. Localhost will not run when yo
 - Raises symbol processing caps to 600 so the 500-stock universe is not clipped.
 - Keeps active-only as the default benchmark; sleeve remains research-only.
 - 100-stock mode remains the paper-live benchmark; 500-stock mode is a research/cloud-readiness stress test.
+
+
+## v7.3 cloud notes
+
+This version keeps the current scanner/backtest logic stable and adds Supabase cloud database prep. Use `supabase/schema.sql` to create cloud tables, add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Vercel Environment Variables, redeploy, then use the dashboard buttons `Check cloud DB` and `Save scan to cloud DB`.
+
+The app still does not place real broker orders. The cloud save feature stores scan signals only.
