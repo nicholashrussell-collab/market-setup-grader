@@ -2077,3 +2077,194 @@ body {
     width: 100%;
   }
 }
+
+/* v8.0 operations console refinement */
+body {
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.014) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.014) 1px, transparent 1px),
+    radial-gradient(circle at 16% 0%, rgba(79, 140, 255, 0.075), transparent 28%),
+    linear-gradient(180deg, #070b14 0%, #080d18 52%, #050812 100%);
+  background-size: 56px 56px, 56px 56px, auto, auto;
+}
+
+.viewer-v80 .viewer-topbar,
+.viewer-v80 .viewer-sidebar,
+.viewer-v80 .viewer-inspector,
+.viewer-v80 .dash-panel,
+.viewer-v80 .dash-tile,
+.viewer-v80 .dash-command-card {
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(12, 17, 28, 0.92);
+  box-shadow: none;
+}
+
+.viewer-v80 .dash-tile.good,
+.viewer-v80 .dash-tile.warn,
+.viewer-v80 .dash-tile.bad,
+.viewer-v80 .console-state.armed,
+.viewer-v80 .console-state.warn {
+  background: rgba(12, 17, 28, 0.92);
+}
+
+.viewer-v80 .dash-tile.good { border-color: rgba(33, 199, 119, 0.26); }
+.viewer-v80 .dash-tile.warn { border-color: rgba(217, 155, 38, 0.26); }
+.viewer-v80 .dash-tile.bad { border-color: rgba(227, 91, 91, 0.26); }
+
+.context-callout {
+  margin: 0 0 12px;
+  border: 1px solid rgba(79, 140, 255, 0.18);
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: #b7c7da;
+  background: rgba(79, 140, 255, 0.055);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.context-callout.warn-callout {
+  border-color: rgba(217, 155, 38, 0.28);
+  background: rgba(217, 155, 38, 0.07);
+  color: #f4d38a;
+}
+
+.rule-stack,
+.research-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rule-stack > div,
+.research-list > div,
+.system-map-grid > div {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(7, 12, 22, 0.58);
+  border-radius: 14px;
+  padding: 11px 12px;
+}
+
+.rule-stack span,
+.system-map-grid span {
+  display: block;
+  color: #8fb3e8;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.rule-stack strong,
+.rule-stack small,
+.research-list strong,
+.research-list span,
+.system-map-grid strong,
+.system-map-grid small {
+  display: block;
+}
+
+.rule-stack strong,
+.research-list strong,
+.system-map-grid strong {
+  color: #f8fafc;
+  font-size: 0.98rem;
+}
+
+.rule-stack small,
+.research-list span,
+.system-map-grid small {
+  color: #9aa8bb;
+  margin-top: 4px;
+  line-height: 1.4;
+  font-size: 0.82rem;
+}
+
+.system-map-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.admin-v80 {
+  width: min(100% - 28px, 1720px);
+  max-width: none;
+  padding: 18px 0 48px;
+}
+
+.admin-workspace {
+  grid-template-columns: 230px minmax(0, 1fr) 360px;
+}
+
+.admin-v80 .viewer-topbar h1 {
+  font-size: clamp(2.8rem, 5.2vw, 5.25rem);
+}
+
+.admin-v80 .admin-settings-grid.compact-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-v80 .full-width-label textarea {
+  min-height: 86px;
+}
+
+.admin-v80 .admin-inspector {
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.admin-v80 .sidebar-links button.compact-link {
+  width: 100%;
+  min-height: 40px;
+  box-shadow: none;
+}
+
+.admin-v80 .research-memory-card {
+  border-color: rgba(79, 140, 255, 0.18);
+}
+
+.admin-v80 .system-profile-panel {
+  border-color: rgba(79, 140, 255, 0.16);
+}
+
+.viewer-v80 .status-badge.warn {
+  color: #f4d38a;
+}
+
+@media (max-width: 1500px) {
+  .admin-workspace {
+    grid-template-columns: 210px minmax(0, 1fr) 340px;
+  }
+  .admin-v80 .admin-settings-grid.compact-settings-grid,
+  .system-map-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .admin-workspace {
+    grid-template-columns: 1fr;
+  }
+  .admin-v80 .admin-inspector {
+    position: static;
+    max-height: none;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-v80 .sidebar-system-card,
+  .admin-v80 .sidebar-links {
+    display: grid;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-v80,
+  .viewer-v80 {
+    width: min(100% - 16px, 100%);
+  }
+  .admin-v80 .admin-settings-grid.compact-settings-grid,
+  .system-map-grid,
+  .admin-v80 .admin-inspector {
+    grid-template-columns: 1fr;
+  }
+}

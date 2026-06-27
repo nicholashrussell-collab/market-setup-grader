@@ -1,29 +1,34 @@
-# Market Setup Grader v7.9
+# Market Setup Grader v8.0
 
-v7.9 adds a professional three-pane viewer layout, simpler colors, sticky navigation, and responsive inspector panels while keeping the autonomous paper bot read-only for viewers.
+Autonomous paper trading viewer and private admin console.
 
-- `/` is the public/read-only viewer dashboard with a cleaner mission-control layout.
-- `/admin` is the private control page for arming, pausing, tuning, and manually running the cloud paper bot.
-- Vercel Cron can call `/api/bot/run` every 15 minutes.
-- Supabase stores scans, signals, paper trades, bot events, and the admin-controlled `bot_control` row.
-- The viewer now separates “latest bot run” from “latest saved scan,” so market-closed cron skips do not look like stale settings.
-- Latest ranked signals can show Top 50 / 100 / 250 / 500 and clearly says “displayed of scanned.”
-- Real broker orders are still locked off. This is cloud paper trading only.
+## Main change
 
-After deploying v7.9:
+v8.0 turns the app into a clearer operations console:
 
-1. Add `ADMIN_PASSWORD` and `ADMIN_SESSION_SECRET` in Vercel Environment Variables.
-2. Run `supabase/schema.sql` again in Supabase SQL Editor.
-3. Open `/admin`, log in, save the settings, and arm paper trading when you are ready.
-4. Share `/` as the read-only dashboard, not `/admin`.
+- `/` is the read-only viewer/dashboard.
+- `/admin` is the private command center.
+- The viewer now separates **current admin rules** from the **latest saved scan**.
+- If the market is closed and cron skips scanning, the dashboard no longer makes it look like the bot is using the wrong universe.
+- Admin now uses the same left-sidebar / center-workspace / right-inspector layout as the viewer.
+- Added system profile and research-memory panels so you can see what the bot is doing without hunting through every setting.
 
-Recommended starting settings:
+## Safety
 
-- Universe: Super Wide 100 or Super Wide 500
-- Timeframe: 15Min
-- Paper execution: disarmed until you intentionally arm it
-- Stale simulation: off for real paper-live tests
-- Risk per trade: 1%
-- Max open trades: 4
+This remains paper-only. No real broker orders are placed.
 
-No real-money execution is included in this version.
+## Deploy
+
+Copy into your GitHub/Vercel project folder, commit, and push.
+
+```powershell
+robocopy "C:\Users\nicho\Downloads\market-setup-grader-v8-0\v8_0" "C:\Users\nicho\Downloads\market-setup-grader-v7-2\v7_2" /E /XD .git node_modules .next .vercel /XF .env .env.local package-lock.json
+
+cd C:\Users\nicho\Downloads\market-setup-grader-v7-2\v7_2
+git status
+git add -A
+git commit -m "Add v8.0 operations console clarity"
+git push
+```
+
+No Supabase schema rerun should be needed if v7.7 schema was already applied.

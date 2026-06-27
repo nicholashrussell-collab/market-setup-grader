@@ -51,7 +51,7 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 120,
-  notes: "Managed from v7.9 admin.",
+  notes: "Managed from v8.0 admin.",
 };
 
 function money(value: number) {
@@ -179,6 +179,8 @@ export default function AdminPage() {
   const update = (patch: Partial<BotControl>) => setControl((prev) => ({ ...prev, ...patch }));
 
   const riskSummary = useMemo(() => `${control.risk_pct}% risk · ${control.max_position_pct}% max position · ${control.max_open_positions} max open`, [control]);
+  const activeProfile = `${control.universe_label} · ${control.scan_limit} max symbols · ${control.timeframe}`;
+  const tradeGate = `Scores ${control.min_score}-${control.max_score} · min R/R ${control.min_rr} · stale guard ${control.max_stale_minutes}m`;
 
   if (checkingSession) {
     return <main className="dash-shell admin-login-shell"><section className="dash-panel login-panel"><h1>Checking admin session...</h1><p className="muted">Loading private control center.</p></section></main>;
@@ -201,51 +203,70 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="dash-shell admin-shell">
-      <header className="dash-header hero-readonly">
-        <div>
-          <span className="eyebrow">Private admin mode</span>
-          <h1>Market Setup Grader v7.9 Admin</h1>
-          <p>Private command center for the autonomous cloud paper bot. Tune it here, then share the homepage as a safe read-only viewer.</p>
-        </div>
-        <div className="dash-header-actions">
-          <Link className="ghost-link" href="/">Viewer dashboard</Link>
-          <Link className="ghost-link" href="/research">Research lab</Link>
-          <button className="secondary" onClick={() => void logout()}>Logout</button>
-        </div>
-      </header>
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 admin-v80">
+      <div className="terminal-workspace admin-workspace">
+        <aside className="viewer-sidebar" aria-label="Admin navigation">
+          <div className="sidebar-brand">
+            <span className="brand-mark">MSG</span>
+            <div><strong>Admin Console</strong><small>Private bot control</small></div>
+          </div>
+          <nav className="sidebar-nav">
+            <a href="#command">Command</a>
+            <a href="#settings">Settings</a>
+            <a href="#profile">System</a>
+            <a href="#activity">Activity</a>
+            <a href="#trades">Trades</a>
+          </nav>
+          <div className="sidebar-system-card">
+            <span className={`state-dot ${control.bot_enabled ? "good" : "warn"}`} />
+            <div><strong>{control.bot_enabled ? "Engine running" : "Engine paused"}</strong><small>{canPaperTrade ? "Paper entries armed" : "Entries disarmed"}</small></div>
+          </div>
+          <div className="sidebar-links">
+            <Link className="ghost-link compact-link" href="/">Viewer dashboard</Link>
+            <Link className="ghost-link compact-link" href="/research">Research lab</Link>
+            <button className="secondary compact-link" onClick={() => void logout()}>Logout</button>
+          </div>
+        </aside>
 
-      <section className="console-topline">
-        <div className={`console-state ${control.bot_enabled ? "armed" : "warn"}`}><span>Bot engine</span><strong>{control.bot_enabled ? "Running" : "Paused"}</strong><small>{control.bot_enabled ? "Cron can run scheduled cycles." : "Cron calls will skip until resumed."}</small></div>
-        <div className={`console-state ${canPaperTrade ? "armed" : "warn"}`}><span>Paper execution</span><strong>{canPaperTrade ? "Armed" : "Disarmed"}</strong><small>{canPaperTrade ? "Cloud bot may open paper trades when rules pass." : "Scans/checks can run, but new paper entries are blocked."}</small></div>
-        <div className={`console-state ${bot?.market?.isOpen ? "armed" : "warn"}`}><span>Market</span><strong>{bot?.market?.label || "Loading"}</strong><small>{bot?.market?.reason || "Checking market guard."}</small></div>
-        <div className="console-state safe"><span>Rules</span><strong>{control.universe_label}</strong><small>{control.scan_limit} max symbols · {control.timeframe} · {riskSummary}</small></div>
-      </section>
+        <section className="viewer-main-area">
+          <header className="viewer-topbar admin-topbar-v80">
+            <div>
+              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.0</span><span className="status-badge warn">Controls live here</span></div>
+              <h1>Market Setup Grader Admin</h1>
+              <p>Private command center for the autonomous cloud paper bot. Tune the system here, then use the homepage as a clean read-only monitoring desk.</p>
+            </div>
+            <div className="topbar-rule-card"><span>Saved bot profile</span><strong>{activeProfile}</strong><small>{riskSummary} · {tradeGate}</small></div>
+          </header>
 
-      <section className="dash-status-row">
-        <StatTile label="Paper equity" value={money(paperEquity)} helper={`${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={paperEquity >= 5000 ? "good" : "bad"} />
-        <StatTile label="Open cloud trades" value={openTrades.length} helper={`${closedTrades.length} recent closed loaded`} />
-        <StatTile label="Last event" value={bot?.lastEvent ? bot.lastEvent.event_type : "—"} helper={bot?.lastEvent ? formatDateTime(bot.lastEvent.created_at) : "No events yet"} />
-        <StatTile label="Cloud DB" value={bot?.configured ? "Connected" : "Not ready"} helper={bot?.message || "Status loading"} tone={bot?.configured ? "good" : "warn"} />
-      </section>
+          <section className="viewer-metrics-grid">
+            <StatTile label="Bot engine" value={control.bot_enabled ? "Running" : "Paused"} helper={control.bot_enabled ? "Cron can run scheduled cycles." : "Cron calls will skip until resumed."} tone={control.bot_enabled ? "good" : "warn"} />
+            <StatTile label="Paper execution" value={canPaperTrade ? "Armed" : "Disarmed"} helper={canPaperTrade ? "Cloud bot may open paper trades when rules pass." : "Scans/checks can run, but entries are blocked."} tone={canPaperTrade ? "good" : "warn"} />
+            <StatTile label="Market" value={bot?.market?.label || "Loading"} helper={bot?.market?.reason || "Checking market guard."} tone={bot?.market?.isOpen ? "good" : "warn"} />
+            <StatTile label="Cloud DB" value={bot?.configured ? "Connected" : "Not ready"} helper={bot?.message || "Status loading"} tone={bot?.configured ? "good" : "warn"} />
+          </section>
 
-      <section className="dash-command-card admin-command-card">
-        <div className="panel-heading-row"><div><h2>Autopilot control</h2><p>These settings are saved to Supabase. Cron uses them even when your browser is closed.</p></div><span className="small-pill">Every 15 min</span></div>
-        <div className="row-actions admin-primary-actions">
-          <button className="arm-button" onClick={() => void quickSetPaperTrading(true)} disabled={saving || canPaperTrade}>Arm paper bot</button>
-          <button className="danger" onClick={() => void quickSetPaperTrading(false)} disabled={saving || !control.paper_trading_enabled}>Disarm paper bot</button>
-          <button className="secondary" onClick={() => void update({ bot_enabled: !control.bot_enabled })}>{control.bot_enabled ? "Pause engine" : "Resume engine"}</button>
-          <button onClick={() => void runOnce()} disabled={running}>{running ? "Running..." : "Run cloud bot once"}</button>
-          <button className="secondary" onClick={() => void saveControl()} disabled={saving}>{saving ? "Saving..." : "Save settings"}</button>
-        </div>
-        <div className="execution-note">{status}</div>
-      </section>
+          <section className="viewer-metrics-grid secondary-metrics">
+            <StatTile label="Paper equity" value={money(paperEquity)} helper={`${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={paperEquity >= control.starting_equity ? "good" : "bad"} />
+            <StatTile label="Open cloud trades" value={openTrades.length} helper={`${closedTrades.length} recent closed loaded`} />
+            <StatTile label="Last event" value={bot?.lastEvent ? bot.lastEvent.event_type : "—"} helper={bot?.lastEvent ? formatDateTime(bot.lastEvent.created_at) : "No events yet"} />
+            <StatTile label="Rules summary" value={control.universe_label} helper={`${control.scan_limit} symbols · ${control.timeframe} · score ${control.min_score}-${control.max_score}`} />
+          </section>
 
-      <section className="dash-main-grid admin-grid">
-        <div className="dash-left-column">
-          <section className="dash-panel">
-            <div className="panel-heading-row"><div><h2>Cloud bot settings</h2><p>Start with Super Wide 100 or 500. Treat all entries as paper-only until the cloud logs prove the system is safe.</p></div></div>
-            <div className="settings-grid admin-settings-grid">
+          <section id="command" className="dash-command-card admin-command-card">
+            <div className="panel-heading-row"><div><h2>Autopilot command</h2><p>These settings are saved to Supabase. Cron uses them even when your browser is closed.</p></div><span className="small-pill">Every 15 min</span></div>
+            <div className="row-actions admin-primary-actions">
+              <button className="arm-button" onClick={() => void quickSetPaperTrading(true)} disabled={saving || canPaperTrade}>Arm paper bot</button>
+              <button className="danger" onClick={() => void quickSetPaperTrading(false)} disabled={saving || !control.paper_trading_enabled}>Disarm paper bot</button>
+              <button className="secondary" onClick={() => void update({ bot_enabled: !control.bot_enabled })}>{control.bot_enabled ? "Pause engine" : "Resume engine"}</button>
+              <button onClick={() => void runOnce()} disabled={running}>{running ? "Running..." : "Run cloud bot once"}</button>
+              <button className="secondary" onClick={() => void saveControl()} disabled={saving}>{saving ? "Saving..." : "Save settings"}</button>
+            </div>
+            <div className="execution-note">{status}</div>
+          </section>
+
+          <section id="settings" className="dash-panel settings-panel-v80">
+            <div className="panel-heading-row"><div><h2>Cloud bot settings</h2><p>These are the live paper rules the scheduled worker reads. Start conservative, then let the cloud logs prove behavior before expanding.</p></div></div>
+            <div className="settings-grid admin-settings-grid compact-settings-grid">
               <label>Universe<select value={control.universe_label} onChange={(e) => update({ universe_label: e.target.value })}><option>Core 9</option><option>Super Wide 100</option><option>Super Wide 500</option></select></label>
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>
               <label>Scan limit<input type="number" value={control.scan_limit} onChange={(e) => update({ scan_limit: Number(e.target.value) || 100 })} /></label>
@@ -261,24 +282,54 @@ export default function AdminPage() {
             </div>
             <label className="full-width-label">Admin notes<textarea rows={3} value={control.notes || ""} onChange={(e) => update({ notes: e.target.value })} /></label>
           </section>
-        </div>
 
-        <aside className="dash-right-column">
-          <section className="dash-panel cloud-bot-panel">
+          <section id="profile" className="dash-panel system-profile-panel">
+            <div className="panel-heading-row"><div><h2>What this bot is set to do</h2><p>A readable summary of the system so you can quickly understand the live paper engine without digging through every input.</p></div></div>
+            <div className="system-map-grid">
+              <div><span>Universe layer</span><strong>{control.universe_label}</strong><small>Current scan cap: {control.scan_limit}. This is the tradable liquid watchlist, not literally every ticker.</small></div>
+              <div><span>Setup layer</span><strong>Pullback / reclaim + continuation</strong><small>Grades long and short setups, but only opens paper trades if score, R/R, freshness, and risk checks pass.</small></div>
+              <div><span>Risk layer</span><strong>{control.risk_pct}% risk · {control.max_open_positions} max open</strong><small>Position size is capped by risk-per-trade and max position value.</small></div>
+              <div><span>Safety layer</span><strong>Paper-only, market-hours guarded</strong><small>Real broker orders remain locked off. Stale data is blocked unless simulation is manually enabled.</small></div>
+            </div>
+          </section>
+        </section>
+
+        <aside className="viewer-inspector admin-inspector" aria-label="Admin inspector">
+          <section id="trades" className="dash-panel inspector-card cloud-bot-panel">
             <div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>Server-side paper positions saved in Supabase.</p></div><span className="small-pill">{openTrades.length}</span></div>
             <div className="position-list">
               {openTrades.length ? openTrades.map((p) => <div key={p.id} className="position-row open"><div><strong>{p.symbol}</strong><span>{p.bias} · cloud paper</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{p.last_price ? `${Number(p.last_price).toFixed(2)} last` : "open"}</span></div></div>) : <p className="muted">No open cloud paper trades.</p>}
             </div>
           </section>
 
-          <section className="dash-panel">
+          <section id="activity" className="dash-panel inspector-card">
             <h2>Cloud bot activity</h2>
-            <div className="activity-list">
-              {events.length ? events.slice(0, 15).map((event) => <div key={event.id}>{formatDateTime(event.created_at)} · {event.message}</div>) : <p className="muted">No cloud events yet.</p>}
+            <div className="activity-list timeline-list">
+              {events.length ? events.slice(0, 15).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{event.message}</span></div>) : <p className="muted">No cloud events yet.</p>}
+            </div>
+          </section>
+
+          <section className="dash-panel inspector-card system-snapshot-card">
+            <h2>Live rule snapshot</h2>
+            <div className="rule-stack">
+              <div><span>Engine</span><strong>{control.bot_enabled ? "Running" : "Paused"}</strong><small>{canPaperTrade ? "Paper entries armed" : "Paper entries disarmed"}</small></div>
+              <div><span>Scan</span><strong>{activeProfile}</strong><small>{tradeGate}</small></div>
+              <div><span>Risk</span><strong>{riskSummary}</strong><small>Starting equity {money(control.starting_equity)} · stale simulation {control.allow_stale_simulation ? "ON" : "OFF"}</small></div>
+            </div>
+          </section>
+
+          <section className="dash-panel inspector-card research-memory-card">
+            <h2>Research memory</h2>
+            <div className="research-list">
+              <div><strong>Direction</strong><span>Active-only paper trading. No buy-and-hold sleeve in the live bot.</span></div>
+              <div><strong>Strong reference</strong><span>100-stock active scanner backtest showed the clearest promise; cloud paper validation is the next proof step.</span></div>
+              <div><strong>Risk default</strong><span>1% per paper trade, 25% max position, 4 max open trades.</span></div>
+              <div><strong>Current priority</strong><span>Watch several market days of autonomous logs before considering any real broker integration.</span></div>
             </div>
           </section>
         </aside>
-      </section>
+      </div>
     </main>
   );
+
 }
