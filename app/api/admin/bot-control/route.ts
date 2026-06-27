@@ -53,6 +53,7 @@ export async function PATCH(req: Request) {
     "notes",
     "broker_mode",
     "broker_paper_enabled",
+    "broker_live_enabled",
   ];
   for (const key of keys) {
     if (Object.prototype.hasOwnProperty.call(body, key)) allowed[key] = body[key];

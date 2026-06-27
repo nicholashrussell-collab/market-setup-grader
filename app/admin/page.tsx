@@ -23,18 +23,18 @@ type BotControl = {
   notes?: string;
   broker_mode?: string;
   broker_paper_enabled?: boolean;
+  broker_live_enabled?: boolean;
 };
 type BotEvent = { id: string; created_at: string; event_type: string; message: string };
 type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string };
-type BrokerStatus = { configured?: boolean; isPaper?: boolean; baseUrl?: string; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string; cash?: string; status?: string }; orders?: any[]; positions?: any[] };
-type PreflightCheck = { name: string; ok: boolean; message: string };
+type BrokerStatus = { configured?: boolean; mode?: string; isPaper?: boolean; isLive?: boolean; liveUnlocked?: boolean; canSubmitOrders?: boolean; realTradingLocked?: boolean; baseUrl?: string; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string; cash?: string; status?: string }; orders?: any[]; positions?: any[] };
 
 type BotStatus = {
   ok: boolean;
   configured: boolean;
   message: string;
   market?: { isOpen: boolean; label: string; reason: string };
-  settings?: { universeLabel: string; symbols: number; timeframe: string; maxOpenPositions: number; paperTradingEnabled: boolean };
+  settings?: { universeLabel: string; symbols: number; timeframe: string; maxOpenPositions: number; paperTradingEnabled: boolean; brokerMode?: string; brokerPaperEnabled?: boolean; brokerLiveEnabled?: boolean };
   lastEvent?: BotEvent | null;
   events?: BotEvent[];
   openTrades?: PaperTrade[];
@@ -57,9 +57,10 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 120,
-  notes: "Managed from v8.3 admin.",
+  notes: "Managed from v8.4 admin. Saved settings are the source of truth for the scheduled cloud bot.",
   broker_mode: "Supabase Simulation",
   broker_paper_enabled: false,
+  broker_live_enabled: false,
 };
 
 function money(value: number) {
@@ -82,8 +83,6 @@ export default function AdminPage() {
   const [status, setStatus] = useState("Admin control center loading...");
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [startingAutonomous, setStartingAutonomous] = useState(false);
-  const [preflightChecks, setPreflightChecks] = useState<PreflightCheck[]>([]);
 
   const openTrades = bot?.openTrades || [];
   const closedTrades = bot?.closedTrades || [];
@@ -91,7 +90,7 @@ export default function AdminPage() {
   const realizedPnl = closedTrades.reduce((sum, trade) => sum + Number(trade.result_dollars || 0), 0);
   const unrealizedPnl = openTrades.reduce((sum, trade) => sum + Number(trade.unrealized_pnl || 0), 0);
   const paperEquity = 5000 + realizedPnl + unrealizedPnl;
-  const canPaperTrade = control.bot_enabled && control.paper_trading_enabled;
+  const canTrade = control.bot_enabled && control.paper_trading_enabled;
 
   const loadSession = useCallback(async () => {
     try {
@@ -186,30 +185,13 @@ export default function AdminPage() {
     }
   };
 
-  const startAutonomousPaperBot = async () => {
-    setStartingAutonomous(true);
-    setStatus("Running autonomous paper bot pre-flight checks...");
-    setPreflightChecks([]);
-    try {
-      const res = await fetch("/api/admin/autostart", { method: "POST" });
-      const data = await res.json();
-      setPreflightChecks(data.checks || []);
-      if (!res.ok || !data.ok) throw new Error(data.message || "Autonomous paper setup failed.");
-      if (data.control) setControl({ ...defaultControl, ...data.control });
-      setStatus(data.message || "Autonomous paper bot is live.");
-      await loadAdminData();
-    } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Autonomous paper setup failed.");
-    } finally {
-      setStartingAutonomous(false);
-    }
-  };
-
   const update = (patch: Partial<BotControl>) => setControl((prev) => ({ ...prev, ...patch }));
 
   const riskSummary = useMemo(() => `${control.risk_pct}% risk · ${control.max_position_pct}% max position · ${control.max_open_positions} max open`, [control]);
   const brokerMode = control.broker_mode || "Supabase Simulation";
-  const brokerArmed = brokerMode === "Alpaca Paper" && Boolean(control.broker_paper_enabled);
+  const brokerPaperArmed = brokerMode === "Alpaca Paper" && Boolean(control.broker_paper_enabled);
+  const brokerLiveArmed = brokerMode === "Alpaca Live" && Boolean(control.broker_live_enabled);
+  const brokerArmed = brokerPaperArmed || brokerLiveArmed;
   const activeProfile = `${control.universe_label} · ${control.scan_limit} max symbols · ${control.timeframe}`;
   const tradeGate = `Scores ${control.min_score}-${control.max_score} · min R/R ${control.min_rr} · stale guard ${control.max_stale_minutes}m`;
 
@@ -234,7 +216,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 admin-v80 admin-v81">
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 admin-v80 admin-v81 admin-v84">
       <div className="terminal-workspace admin-workspace">
         <aside className="viewer-sidebar" aria-label="Admin navigation">
           <div className="sidebar-brand">
@@ -250,7 +232,7 @@ export default function AdminPage() {
           </nav>
           <div className="sidebar-system-card">
             <span className={`state-dot ${control.bot_enabled ? "good" : "warn"}`} />
-            <div><strong>{control.bot_enabled ? "Engine running" : "Engine paused"}</strong><small>{canPaperTrade ? "Paper entries armed" : "Entries disarmed"}</small></div>
+            <div><strong>{control.bot_enabled ? "Engine running" : "Engine paused"}</strong><small>{canTrade ? "Trade entries armed" : "Entries disarmed"}</small></div>
           </div>
           <div className="sidebar-links">
             <Link className="ghost-link compact-link" href="/">Viewer dashboard</Link>
@@ -262,42 +244,41 @@ export default function AdminPage() {
         <section className="viewer-main-area">
           <header className="viewer-topbar admin-topbar-v80">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.3</span><span className="status-badge good">One-click autonomous paper</span></div>
+              <div className="viewer-version-row"><span className="eyebrow">Private admin mode</span><span className="status-badge info">v8.4</span><span className="status-badge good">Broker-ready settings</span></div>
               <h1>Admin Command Center</h1>
-              <p>Private command center for the autonomous cloud paper bot. Use one-click setup to arm the stable Alpaca Paper preset, then use the homepage as a read-only monitoring desk.</p>
+              <p>Private command center for the autonomous cloud bot. The settings below are the source of truth; cron uses them every cycle without resetting your profile.</p>
             </div>
             <div className="topbar-rule-card"><span>Saved bot profile</span><strong>{activeProfile}</strong><small>{riskSummary} · {tradeGate}</small></div>
           </header>
 
           <section className="viewer-metrics-grid">
-            <StatTile label="Broker mode" value={brokerMode} helper={brokerArmed ? "Alpaca paper order bridge is enabled." : "No external broker orders in this mode."} tone={brokerArmed ? "good" : brokerMode === "Real Locked" ? "bad" : "warn"} />
+            <StatTile label="Broker mode" value={brokerMode} helper={brokerLiveArmed ? "Alpaca LIVE order bridge is enabled." : brokerPaperArmed ? "Alpaca paper order bridge is enabled." : "No external broker orders in this mode."} tone={brokerLiveArmed ? "bad" : brokerPaperArmed ? "good" : brokerMode === "Real Locked" ? "bad" : "warn"} />
             <StatTile label="Bot engine" value={control.bot_enabled ? "Running" : "Paused"} helper={control.bot_enabled ? "Cron can run scheduled cycles." : "Cron calls will skip until resumed."} tone={control.bot_enabled ? "good" : "warn"} />
-            <StatTile label="Paper execution" value={canPaperTrade ? "Armed" : "Disarmed"} helper={canPaperTrade ? "Cloud bot may open paper trades when rules pass." : "Scans/checks can run, but entries are blocked."} tone={canPaperTrade ? "good" : "warn"} />
+            <StatTile label="Trade execution" value={canTrade ? "Armed" : "Disarmed"} helper={canTrade ? "Cloud bot may open trades in the selected execution mode when rules pass." : "Scans/checks can run, but entries are blocked."} tone={canTrade ? (brokerLiveArmed ? "bad" : "good") : "warn"} />
             <StatTile label="Market" value={bot?.market?.label || "Loading"} helper={bot?.market?.reason || "Checking market guard."} tone={bot?.market?.isOpen ? "good" : "warn"} />
             <StatTile label="Cloud DB" value={bot?.configured ? "Connected" : "Not ready"} helper={bot?.message || "Status loading"} tone={bot?.configured ? "good" : "warn"} />
           </section>
 
           <section className="viewer-metrics-grid secondary-metrics">
-            <StatTile label="Paper equity" value={money(paperEquity)} helper={`${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={paperEquity >= control.starting_equity ? "good" : "bad"} />
+            <StatTile label="Tracked equity" value={money(paperEquity)} helper={`${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={paperEquity >= control.starting_equity ? "good" : "bad"} />
             <StatTile label="Open cloud trades" value={openTrades.length} helper={`${closedTrades.length} recent closed loaded`} />
             <StatTile label="Last event" value={bot?.lastEvent ? bot.lastEvent.event_type : "—"} helper={bot?.lastEvent ? formatDateTime(bot.lastEvent.created_at) : "No events yet"} />
             <StatTile label="Rules summary" value={control.universe_label} helper={`${control.scan_limit} symbols · ${control.timeframe} · score ${control.min_score}-${control.max_score}`} />
           </section>
 
           <section id="command" className="dash-command-card admin-command-card">
-            <div className="panel-heading-row"><div><h2>Autopilot command</h2><p>These settings are saved to Supabase. Cron uses them even when your browser is closed.</p></div><span className="small-pill">Every 15 min</span></div>
+            <div className="panel-heading-row"><div><h2>Execution command</h2><p>Use this area to arm, pause, or run the cloud bot. It does not overwrite your saved strategy settings or force a preset.</p></div><span className="small-pill">Every 15 min</span></div>
             <div className="autonomous-start-card">
               <div>
-                <span className="eyebrow">Recommended final setup</span>
-                <h3>Start Autonomous Paper Bot</h3>
-                <p>Runs pre-flight checks, connects Alpaca Paper, saves the stable preset, arms paper execution, and keeps real broker trading locked.</p>
+                <span className="eyebrow">Current execution route</span>
+                <h3>{brokerMode}</h3>
+                <p>{brokerLiveArmed ? "Live broker mode is selected. The bot will only submit live orders if the Vercel live unlock environment variables are also set." : brokerPaperArmed ? "Alpaca Paper is selected. The bot can submit paper broker orders using these same saved rules." : "Broker order submission is off. The bot will only scan/log or use Supabase simulation depending on the selected mode."}</p>
               </div>
-              <button className="arm-button big-arm-button" onClick={() => void startAutonomousPaperBot()} disabled={startingAutonomous || saving}>{startingAutonomous ? "Starting..." : "Start autonomous paper bot"}</button>
+              <div className="mode-lock-card"><strong>{canTrade ? "Execution armed" : "Execution disarmed"}</strong><span>{control.bot_enabled ? "Engine running" : "Engine paused"}</span></div>
             </div>
-            {preflightChecks.length ? <div className="preflight-list">{preflightChecks.map((check) => <div key={check.name} className={check.ok ? "preflight-ok" : "preflight-bad"}><strong>{check.ok ? "PASS" : "BLOCK"} · {check.name}</strong><span>{check.message}</span></div>)}</div> : null}
             <div className="row-actions admin-primary-actions">
-              <button className="secondary" onClick={() => void quickSetPaperTrading(true)} disabled={saving || canPaperTrade}>Arm paper bot only</button>
-              <button className="danger" onClick={() => void quickSetPaperTrading(false)} disabled={saving || !control.paper_trading_enabled}>Disarm paper bot</button>
+              <button className="secondary" onClick={() => void quickSetPaperTrading(true)} disabled={saving || canTrade}>Arm trade execution</button>
+              <button className="danger" onClick={() => void quickSetPaperTrading(false)} disabled={saving || !control.paper_trading_enabled}>Disarm trade execution</button>
               <button className="secondary" onClick={() => void update({ bot_enabled: !control.bot_enabled })}>{control.bot_enabled ? "Pause engine" : "Resume engine"}</button>
               <button onClick={() => void runOnce()} disabled={running}>{running ? "Running..." : "Run cloud bot once"}</button>
               <button className="secondary" onClick={() => void saveControl()} disabled={saving}>{saving ? "Saving..." : "Save settings"}</button>
@@ -306,12 +287,12 @@ export default function AdminPage() {
           </section>
 
           <section id="settings" className="dash-panel settings-panel-v80">
-            <div className="panel-heading-row"><div><h2>Cloud bot settings</h2><p>These are the live paper rules the scheduled worker reads. The one-click preset fills these with a stable broker-paper configuration; manual edits are still available.</p></div></div>
+            <div className="panel-heading-row"><div><h2>Cloud bot settings</h2><p>These are the saved rules the scheduled worker reads. Paper and live broker modes use the same profile, risk %, score range, R/R, and max-open settings you save here.</p></div></div>
             <div className="settings-grid admin-settings-grid compact-settings-grid">
               <label>Universe<select value={control.universe_label} onChange={(e) => update({ universe_label: e.target.value })}><option>Core 9</option><option>Super Wide 100</option><option>Super Wide 500</option></select></label>
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>
               <label>Scan limit<input type="number" value={control.scan_limit} onChange={(e) => update({ scan_limit: Number(e.target.value) || 100 })} /></label>
-              <label>Starting paper equity<input type="number" value={control.starting_equity} onChange={(e) => update({ starting_equity: Number(e.target.value) || 5000 })} /></label>
+              <label>Starting / tracked equity<input type="number" value={control.starting_equity} onChange={(e) => update({ starting_equity: Number(e.target.value) || 5000 })} /></label>
               <label>Risk per trade %<input type="number" step="0.1" value={control.risk_pct} onChange={(e) => update({ risk_pct: Number(e.target.value) || 1 })} /></label>
               <label>Max position %<input type="number" step="1" value={control.max_position_pct} onChange={(e) => update({ max_position_pct: Number(e.target.value) || 25 })} /></label>
               <label>Max open trades<input type="number" value={control.max_open_positions} onChange={(e) => update({ max_open_positions: Number(e.target.value) || 4 })} /></label>
@@ -320,8 +301,9 @@ export default function AdminPage() {
               <label>Min R/R<input type="number" step="0.1" value={control.min_rr} onChange={(e) => update({ min_rr: Number(e.target.value) || 1 })} /></label>
               <label>Max stale minutes<input type="number" value={control.max_stale_minutes} onChange={(e) => update({ max_stale_minutes: Number(e.target.value) || 30 })} /></label>
               <label>Stale simulation<select value={control.allow_stale_simulation ? "on" : "off"} onChange={(e) => update({ allow_stale_simulation: e.target.value === "on" })}><option value="off">OFF: block stale candles</option><option value="on">ON: paper test only</option></select></label>
-              <label>Execution mode<select value={brokerMode} onChange={(e) => update({ broker_mode: e.target.value, broker_paper_enabled: e.target.value === "Alpaca Paper" ? control.broker_paper_enabled : false })}><option>Supabase Simulation</option><option>Alpaca Paper</option><option>Real Locked</option></select></label>
-              <label>Alpaca paper bridge<select value={control.broker_paper_enabled ? "on" : "off"} onChange={(e) => update({ broker_paper_enabled: e.target.value === "on" })}><option value="off">OFF: no broker orders</option><option value="on">ON: paper broker orders</option></select></label>
+              <label>Execution mode<select value={brokerMode} onChange={(e) => update({ broker_mode: e.target.value, broker_paper_enabled: e.target.value === "Alpaca Paper" ? control.broker_paper_enabled : false, broker_live_enabled: e.target.value === "Alpaca Live" ? control.broker_live_enabled : false })}><option>Supabase Simulation</option><option>Alpaca Paper</option><option>Alpaca Live</option><option>Real Locked</option></select></label>
+              <label>Alpaca paper bridge<select value={control.broker_paper_enabled ? "on" : "off"} onChange={(e) => update({ broker_paper_enabled: e.target.value === "on", broker_live_enabled: false, broker_mode: e.target.value === "on" ? "Alpaca Paper" : brokerMode })}><option value="off">OFF: no paper broker orders</option><option value="on">ON: paper broker orders</option></select></label>
+              <label>Alpaca live bridge<select value={control.broker_live_enabled ? "on" : "off"} onChange={(e) => update({ broker_live_enabled: e.target.value === "on", broker_paper_enabled: false, broker_mode: e.target.value === "on" ? "Alpaca Live" : brokerMode })}><option value="off">OFF: no live broker orders</option><option value="on">ON: live broker orders if env unlock passes</option></select></label>
             </div>
             <label className="full-width-label">Admin notes<textarea rows={3} value={control.notes || ""} onChange={(e) => update({ notes: e.target.value })} /></label>
           </section>
@@ -332,8 +314,8 @@ export default function AdminPage() {
               <div><span>Universe layer</span><strong>{control.universe_label}</strong><small>Current scan cap: {control.scan_limit}. This is the tradable liquid watchlist, not literally every ticker.</small></div>
               <div><span>Setup layer</span><strong>Pullback / reclaim + continuation</strong><small>Grades long and short setups, but only opens paper trades if score, R/R, freshness, and risk checks pass.</small></div>
               <div><span>Risk layer</span><strong>{control.risk_pct}% risk · {control.max_open_positions} max open</strong><small>Position size is capped by risk-per-trade and max position value.</small></div>
-              <div><span>Execution layer</span><strong>{brokerMode}</strong><small>{brokerArmed ? "Orders route to Alpaca paper only; real trading URL remains blocked." : "Bot records Supabase simulation trades only."}</small></div>
-              <div><span>Safety layer</span><strong>Paper-only, market-hours guarded</strong><small>Real broker orders remain locked off. Stale data is blocked unless simulation is manually enabled.</small></div>
+              <div><span>Execution layer</span><strong>{brokerMode}</strong><small>{brokerLiveArmed ? "Orders route to Alpaca Live only after environment unlock checks pass." : brokerPaperArmed ? "Orders route to Alpaca Paper using the same saved strategy settings." : "Bot records Supabase simulation trades only."}</small></div>
+              <div><span>Safety layer</span><strong>Market-hours guarded</strong><small>Paper and live modes use the same saved rules. Live orders require separate live credentials plus environment unlock gates.</small></div>
             </div>
           </section>
         </section>
@@ -342,17 +324,17 @@ export default function AdminPage() {
           <section className="dash-panel inspector-card system-snapshot-card">
             <h2>Broker bridge</h2>
             <div className="rule-stack">
-              <div><span>Mode</span><strong>{brokerMode}</strong><small>{brokerArmed ? "Alpaca paper submissions enabled from admin." : "Broker submissions disabled."}</small></div>
-              <div><span>Endpoint</span><strong>{bot?.broker?.isPaper ? "Paper API" : "Locked / not paper"}</strong><small>{bot?.broker?.message || "Broker status loads through server environment variables."}</small></div>
+              <div><span>Mode</span><strong>{brokerMode}</strong><small>{brokerLiveArmed ? "Alpaca live submissions selected from admin." : brokerPaperArmed ? "Alpaca paper submissions enabled from admin." : "Broker submissions disabled."}</small></div>
+              <div><span>Endpoint</span><strong>{bot?.broker?.isLive ? "Live API" : bot?.broker?.isPaper ? "Paper API" : "Locked / simulation"}</strong><small>{bot?.broker?.message || "Broker status loads through server environment variables."}</small></div>
               <div><span>Account</span><strong>{bot?.broker?.account?.portfolio_value ? money(Number(bot.broker.account.portfolio_value)) : "—"}</strong><small>{bot?.broker?.account?.buying_power ? `${money(Number(bot.broker.account.buying_power))} buying power` : (bot?.broker?.error || "No broker account sync loaded yet.")}</small></div>
               <div><span>Broker open</span><strong>{bot?.broker?.positions?.length ?? 0} positions · {bot?.broker?.orders?.length ?? 0} orders</strong><small>Dashboard still stores the audit record in Supabase.</small></div>
             </div>
           </section>
 
           <section id="trades" className="dash-panel inspector-card cloud-bot-panel">
-            <div className="panel-heading-row"><div><h2>Open cloud paper trades</h2><p>Server-side paper positions saved in Supabase.</p></div><span className="small-pill">{openTrades.length}</span></div>
+            <div className="panel-heading-row"><div><h2>Open bot trade records</h2><p>Server-side trade records saved in Supabase, including simulation, paper broker, or live broker mode.</p></div><span className="small-pill">{openTrades.length}</span></div>
             <div className="position-list">
-              {openTrades.length ? openTrades.map((p) => <div key={p.id} className="position-row open"><div><strong>{p.symbol}</strong><span>{p.bias} · cloud paper</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{p.last_price ? `${Number(p.last_price).toFixed(2)} last` : "open"}</span></div></div>) : <p className="muted">No open cloud paper trades.</p>}
+              {openTrades.length ? openTrades.map((p) => <div key={p.id} className="position-row open"><div><strong>{p.symbol}</strong><span>{p.bias} · bot record</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{p.last_price ? `${Number(p.last_price).toFixed(2)} last` : "open"}</span></div></div>) : <p className="muted">No open bot trade records.</p>}
             </div>
           </section>
 
@@ -366,8 +348,8 @@ export default function AdminPage() {
           <section className="dash-panel inspector-card system-snapshot-card">
             <h2>Live rule snapshot</h2>
             <div className="rule-stack">
-              <div><span>Engine</span><strong>{control.bot_enabled ? "Running" : "Paused"}</strong><small>{canPaperTrade ? "Paper entries armed" : "Paper entries disarmed"}</small></div>
-              <div><span>Broker</span><strong>{brokerMode}</strong><small>{brokerArmed ? "Alpaca paper bridge enabled" : "Broker bridge off / simulation"}</small></div>
+              <div><span>Engine</span><strong>{control.bot_enabled ? "Running" : "Paused"}</strong><small>{canTrade ? "Trade entries armed" : "Trade entries disarmed"}</small></div>
+              <div><span>Broker</span><strong>{brokerMode}</strong><small>{brokerLiveArmed ? "Alpaca live bridge selected" : brokerPaperArmed ? "Alpaca paper bridge enabled" : "Broker bridge off / simulation"}</small></div>
               <div><span>Scan</span><strong>{activeProfile}</strong><small>{tradeGate}</small></div>
               <div><span>Risk</span><strong>{riskSummary}</strong><small>Starting equity {money(control.starting_equity)} · stale simulation {control.allow_stale_simulation ? "ON" : "OFF"}</small></div>
             </div>
@@ -379,7 +361,7 @@ export default function AdminPage() {
               <div><strong>Direction</strong><span>Active-only paper trading. No buy-and-hold sleeve in the live bot.</span></div>
               <div><strong>Strong reference</strong><span>100-stock active scanner backtest showed the clearest promise; cloud paper validation is the next proof step.</span></div>
               <div><strong>Risk default</strong><span>1% per paper trade, 25% max position, 4 max open trades.</span></div>
-              <div><strong>Current priority</strong><span>Run Alpaca Paper autonomously for several market days. Real broker trading remains locked until the paper broker logs prove clean behavior.</span></div>
+              <div><strong>Current priority</strong><span>Run the same saved bot rules in Supabase simulation or Alpaca Paper. Live mode is wired separately and remains blocked unless the live unlock environment gates are explicitly configured.</span></div>
             </div>
           </section>
         </aside>

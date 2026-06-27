@@ -2,7 +2,7 @@ import { GradeProfile, TargetMode, Timeframe } from "@/lib/trading";
 
 export type ApiDataSource = "Alpaca" | "Massive";
 
-export type BrokerExecutionMode = "Supabase Simulation" | "Alpaca Paper" | "Real Locked";
+export type BrokerExecutionMode = "Supabase Simulation" | "Alpaca Paper" | "Alpaca Live" | "Real Locked";
 
 export type CloudBotSettings = {
   enabled: boolean;
@@ -28,6 +28,7 @@ export type CloudBotSettings = {
   scanLimit: number;
   brokerMode: BrokerExecutionMode;
   brokerPaperEnabled: boolean;
+  brokerLiveEnabled: boolean;
 };
 
 export const CORE_9_SYMBOLS = "AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, SPY, QQQ";
@@ -84,6 +85,7 @@ export function getCloudBotSettings(): CloudBotSettings {
     scanLimit: envNumber("BOT_SCAN_LIMIT", universeLabel === "Super Wide 500" ? 500 : 120),
     brokerMode: (process.env.BOT_BROKER_MODE as BrokerExecutionMode) || "Supabase Simulation",
     brokerPaperEnabled: envBoolean("BOT_BROKER_PAPER_ENABLED", false),
+    brokerLiveEnabled: envBoolean("BOT_BROKER_LIVE_ENABLED", false),
   };
 }
 
@@ -107,6 +109,7 @@ export type BotControlRow = {
   notes?: string;
   broker_mode?: string;
   broker_paper_enabled?: boolean;
+  broker_live_enabled?: boolean;
 };
 
 function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): CloudBotSettings {
@@ -132,6 +135,7 @@ function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): Cl
     scanLimit: Number.isFinite(scanLimit) ? scanLimit : base.scanLimit,
     brokerMode: (row.broker_mode as BrokerExecutionMode) || base.brokerMode,
     brokerPaperEnabled: typeof row.broker_paper_enabled === "boolean" ? row.broker_paper_enabled : base.brokerPaperEnabled,
+    brokerLiveEnabled: typeof row.broker_live_enabled === "boolean" ? row.broker_live_enabled : base.brokerLiveEnabled,
   };
 }
 
@@ -165,8 +169,9 @@ export function defaultBotControlRow(): BotControlRow {
     max_stale_minutes: s.maxStaleMinutes,
     allow_stale_simulation: s.allowStaleSimulation,
     scan_limit: s.scanLimit,
-    notes: "Managed from v8.3 /admin.",
+    notes: "Managed from v8.4 /admin. Admin settings are the source of truth for the scheduled cloud bot.",
     broker_mode: "Supabase Simulation",
     broker_paper_enabled: false,
+    broker_live_enabled: false,
   };
 }

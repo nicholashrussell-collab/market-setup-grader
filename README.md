@@ -1,45 +1,65 @@
-# Market Setup Grader v8.3 — Alpaca Paper Broker Bridge
+# Market Setup Grader v8.4 — Broker-Ready Admin Source of Truth
 
-This version keeps the public dashboard read-only and adds a one-click autonomous paper setup flow from the private `/admin` page. It can still run in Supabase-only simulation mode, or it can submit Alpaca paper bracket orders when explicitly enabled. Real broker execution remains locked.
+v8.4 removes the one-click preset button. The private `/admin` settings are now the source of truth for the scheduled cloud bot.
 
-## One-click setup
+The system can run in three practical modes:
 
-In `/admin`, use **Start Autonomous Paper Bot**. It runs pre-flight checks, verifies Supabase, verifies Alpaca Paper, saves the Stable Autonomous Paper Preset, arms paper execution, and keeps real broker orders locked.
+- `Supabase Simulation` — no broker orders; Supabase tracks simulated trades.
+- `Alpaca Paper` — the same saved admin rules can submit Alpaca paper bracket orders.
+- `Alpaca Live` — the same saved admin rules can submit Alpaca live bracket orders only when separate live credentials and explicit environment unlock gates are configured.
 
-Stable preset:
+The public viewer remains read-only. The admin page controls the cloud bot.
 
-- Universe: Super Wide 100
-- Timeframe: 15Min
-- Scan limit: 100
-- Risk per trade: 1%
-- Max open trades: 4
-- Min score: 80
-- Min R/R: 1.0
-- Stale simulation: OFF
-- Execution mode: Alpaca Paper
+## v8.4 behavior
 
-## Modes
+- No preset button that overwrites your settings.
+- Save settings once in `/admin`; cron uses them every cycle.
+- Paper and live broker modes use the same risk %, score range, R/R, universe, scan limit, and max-open settings saved in admin.
+- Alpaca Live is wired but blocked unless live-specific environment variables are configured.
+- Real-money mode is not automatically enabled by deploying this build.
 
-- **Supabase Simulation**: bot opens simulated paper trades only in Supabase.
-- **Alpaca Paper**: bot submits Alpaca paper bracket orders and also saves an audit row in Supabase.
-- **Real Locked**: visible safety mode; real trading is not enabled in this build.
+## Required for paper mode
 
-## Required setup for Alpaca Paper
-
-In Vercel Environment Variables, keep/add:
-
-```text
-APCA_API_KEY_ID=your Alpaca paper key
-APCA_API_SECRET_KEY=your Alpaca paper secret
+```env
+APCA_API_KEY_ID=your_paper_or_data_key
+APCA_API_SECRET_KEY=your_paper_or_data_secret
+ALPACA_DATA_FEED=iex
 APCA_API_BASE_URL=https://paper-api.alpaca.markets
-SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...
-ADMIN_PASSWORD=...
-ADMIN_SESSION_SECRET=...
 ```
 
-Run `supabase/schema.sql` once after deploying v8.3 so the broker columns and control settings exist.
+Optional paper-specific names are also supported:
 
-## Safety
+```env
+ALPACA_PAPER_API_KEY_ID=your_paper_key
+ALPACA_PAPER_API_SECRET_KEY=your_paper_secret
+ALPACA_PAPER_BASE_URL=https://paper-api.alpaca.markets
+```
 
-This app refuses broker-order submission unless the Alpaca base URL contains `paper-api.alpaca.markets`. Use Alpaca Paper for several weeks before considering any real-money order system.
+## Required for live-broker readiness
+
+Only add these when you intentionally want the live broker route available:
+
+```env
+ALPACA_LIVE_API_KEY_ID=your_live_key
+ALPACA_LIVE_API_SECRET_KEY=your_live_secret
+ALPACA_LIVE_BASE_URL=https://api.alpaca.markets
+LIVE_TRADING_UNLOCKED=true
+LIVE_TRADING_CONFIRMATION=I_UNDERSTAND_REAL_MONEY_RISK
+```
+
+If those live unlock values are missing or wrong, `Alpaca Live` mode will refuse to submit broker orders.
+
+## Supabase
+
+Run `supabase/schema.sql` after deploying v8.4. It adds `broker_live_enabled` to `bot_control` if it does not already exist.
+
+## Safe workflow
+
+1. Deploy v8.4.
+2. Run the schema.
+3. Open `/admin`.
+4. Set the saved bot rules.
+5. Choose `Supabase Simulation` or `Alpaca Paper`.
+6. Arm trade execution.
+7. Let Vercel Cron run every 15 minutes.
+8. Only consider `Alpaca Live` after paper broker logs are clean.

@@ -187,3 +187,10 @@ update public.bot_control
 set broker_mode = coalesce(broker_mode, 'Supabase Simulation'),
     broker_paper_enabled = coalesce(broker_paper_enabled, false)
 where id = 'main';
+
+-- v8.4 live broker readiness additions. Safe to run multiple times.
+alter table public.bot_control add column if not exists broker_live_enabled boolean not null default false;
+
+update public.bot_control
+set broker_live_enabled = coalesce(broker_live_enabled, false)
+where id = 'main';
