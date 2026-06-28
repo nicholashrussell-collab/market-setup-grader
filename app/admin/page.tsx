@@ -64,7 +64,7 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 100,
-  notes: "Managed from v8.7 admin. The tracked symbols list and saved settings are the source of truth for the scheduled cloud bot.",
+  notes: "Managed from v8.8 admin. The tracked symbols list and saved settings are the source of truth for the scheduled cloud bot.",
   broker_mode: "Supabase Simulation",
   broker_paper_enabled: false,
   broker_live_enabled: false,
@@ -328,7 +328,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 admin-v81 admin-v85 admin-v86 admin-v87">
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 admin-v81 admin-v85 admin-v86 admin-v87 admin-v88">
       <div className="terminal-workspace pro-app-shell admin-workspace admin-workspace-v86 admin-workspace-v87">
         <aside className="viewer-sidebar admin-left-rail admin-left-rail-v87" aria-label="Admin navigation">
           <div className="sidebar-brand">
@@ -359,7 +359,7 @@ export default function AdminPage() {
         <section className="viewer-main-area admin-main-v86 admin-main-v87">
           <header className="viewer-topbar page-header-v81 admin-header-v85 admin-header-v86 admin-header-v87">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v8.7</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
+              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v8.8</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
               <h1>Week-Ready Bot Control</h1>
               <p>Set what the cloud bot is allowed to do. The viewer shows what happened. Vercel Cron runs the bot in the background; your laptop does not need to stay open.</p>
             </div>
@@ -462,10 +462,16 @@ export default function AdminPage() {
           </section>
         </section>
 
-        <aside className="viewer-inspector admin-inspector admin-inspector-v86 admin-inspector-v87" aria-label="Admin inspector">
-          <section className="dash-panel inspector-card system-snapshot-card inspector-hero-v87">
+        <aside className="viewer-inspector admin-inspector admin-inspector-v86 admin-inspector-v87 admin-inspector-v88" aria-label="Admin status rail">
+          <div className="rail-title-v88 admin-rail-title-v88">
+            <span className="eyebrow">Control rail</span>
+            <h2>Live command status</h2>
+            <p>Everything here is summary-only. Make changes in the center admin panels.</p>
+          </div>
+
+          <section className="dash-panel inspector-card system-snapshot-card inspector-hero-v87 rail-card-v88">
             <h2>Now</h2>
-            <div className="snapshot-stack-v87">
+            <div className="snapshot-stack-v87 compact-admin-rail-v88">
               <SnapshotRow label="Bot" value={control.bot_enabled ? "Running" : "Paused"} helper={canTrade ? "Execution armed" : "Execution disarmed"} tone={control.bot_enabled ? "good" : "warn"} />
               <SnapshotRow label="Route" value={routeLabel(selectedRoute)} helper={selectedRoute === "paper" ? "Alpaca Paper broker route selected." : selectedRoute === "live" ? "Live route selected but locked unless live gates pass." : "Internal Supabase paper records only."} tone={selectedRoute === "live" ? "bad" : "good"} />
               <SnapshotRow label="Watchlist" value={`${activeSymbols.length} / ${trackedSymbols.length}`} helper="Scanned per run / saved symbols." tone="info" />
@@ -473,35 +479,27 @@ export default function AdminPage() {
             </div>
           </section>
 
-          <section className="dash-panel inspector-card system-snapshot-card">
-            <h2>Broker</h2>
-            <div className="rule-stack readable-stack-v87">
+          <section className="dash-panel inspector-card system-snapshot-card rail-card-v88">
+            <h2>Broker + records</h2>
+            <div className="rule-stack readable-stack-v87 compact-rule-stack-v88">
               <div><span>Connection</span><strong>{bot?.broker?.canSubmitOrders ? "Order route ready" : selectedRoute === "internal" ? "Not required" : "Blocked"}</strong><small>{bot?.broker?.message || bot?.broker?.error || "Broker status loading."}</small></div>
-              <div><span>Account value</span><strong>{bot?.broker?.account?.portfolio_value ? money(Number(bot.broker.account.portfolio_value)) : "—"}</strong><small>{bot?.broker?.account?.buying_power ? `${money(Number(bot.broker.account.buying_power))} buying power` : "No broker account loaded."}</small></div>
-              <div><span>Broker open</span><strong>{bot?.broker?.positions?.length ?? 0} positions · {bot?.broker?.orders?.length ?? 0} orders</strong><small>Supabase still keeps logs and trade records.</small></div>
+              <div><span>Paper account</span><strong>{bot?.broker?.account?.portfolio_value ? money(Number(bot.broker.account.portfolio_value)) : "—"}</strong><small>{bot?.broker?.account?.buying_power ? `${money(Number(bot.broker.account.buying_power))} buying power` : "No broker account loaded."}</small></div>
+              <div><span>Records</span><strong>{openTrades.length} app-open · {bot?.broker?.positions?.length ?? 0} broker positions</strong><small>{bot?.broker?.orders?.length ?? 0} broker orders currently loaded.</small></div>
             </div>
           </section>
 
-          <section id="trades" className="dash-panel inspector-card cloud-bot-panel">
-            <div className="panel-heading-row"><div><h2>Open bot records</h2><p>Server-side trades saved in Supabase.</p></div><span className="small-pill">{openTrades.length}</span></div>
-            <div className="position-list scroll-card-v86 scroll-card-v87">
-              {openTrades.length ? openTrades.map((p) => <div key={p.id} className="position-row open"><div><strong>{p.symbol}</strong><span>{p.bias} · bot record</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{p.last_price ? `${Number(p.last_price).toFixed(2)} last` : "open"}</span></div></div>) : <p className="muted">No open bot trade records.</p>}
+          <section id="activity" className="dash-panel inspector-card rail-card-v88">
+            <div className="panel-heading-row"><div><h2>Latest activity</h2><p>Recent scheduled or manual bot events.</p></div><span className="small-pill">{events.length}</span></div>
+            <div className="activity-list timeline-list scroll-card-v86 scroll-card-v87 rail-activity-list-v88">
+              {events.length ? events.slice(0, 12).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{prettyEvent(event).title}</span><small>{event.message}</small></div>) : <p className="muted">No cloud events yet.</p>}
             </div>
           </section>
 
-          <section id="activity" className="dash-panel inspector-card">
-            <h2>Cloud bot activity</h2>
-            <div className="activity-list timeline-list scroll-card-v86 scroll-card-v87">
-              {events.length ? events.slice(0, 24).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{prettyEvent(event).title}</span><small>{event.message}</small></div>) : <p className="muted">No cloud events yet.</p>}
-            </div>
-          </section>
-
-          <section className="dash-panel inspector-card research-memory-card safety-card-v87">
+          <section className="dash-panel inspector-card research-memory-card safety-card-v87 rail-card-v88">
             <h2>Safety</h2>
-            <div className="research-list">
+            <div className="research-list compact-safety-v88">
               <div><strong>Current goal</strong><span>Autonomous Alpaca Paper trading that runs cleanly in the cloud.</span></div>
               <div><strong>Real money</strong><span>Live trading remains locked behind live credentials and explicit unlock variables.</span></div>
-              <div><strong>Viewer</strong><span>Read-only. Outsiders can see results, not change settings.</span></div>
             </div>
           </section>
         </aside>

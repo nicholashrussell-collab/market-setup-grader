@@ -78,6 +78,19 @@ function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode
   return <span className={`status-badge ${tone}`}>{children}</span>;
 }
 
+function RailRow({ label, value, helper, tone = "info" }: { label: string; value: string | number; helper?: string; tone?: "good" | "warn" | "bad" | "neutral" | "info" }) {
+  return (
+    <div className={`rail-row-v88 ${tone}`}>
+      <span className={`state-dot ${tone === "neutral" ? "info" : tone}`} />
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        {helper ? <small>{helper}</small> : null}
+      </div>
+    </div>
+  );
+}
+
 function signalStatus(row: ScanSignal) {
   if (row.actionable) return "Executable signal";
   if (row.stale_minutes && row.stale_minutes > 30) return "Blocked: stale / market closed";
@@ -282,7 +295,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   );
 
   return (
-    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 viewer-v86">
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 viewer-v86 viewer-v88">
       <div className="terminal-workspace pro-app-shell">
         <aside className="viewer-sidebar" aria-label="Viewer navigation">
           <div className="sidebar-brand">
@@ -292,6 +305,10 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
           <nav className="sidebar-nav route-nav">
             {navItems.map((item) => <Link key={item.id} href={item.href} className={activeView === item.id ? "active" : ""}><span>{item.label}</span><small>{item.helper}</small></Link>)}
           </nav>
+          <div className="sidebar-system-card viewer-orientation-card-v88">
+            <span className="state-dot info" />
+            <div><strong>Fixed monitor layout</strong><small>Left navigation, center dashboard, right status rail.</small></div>
+          </div>
           <div className="sidebar-system-card">
             <span className={`state-dot ${botEngineRunning ? "good" : "warn"}`} />
             <div><strong>{botEngineRunning ? "Engine running" : "Engine paused"}</strong><small>{tradeArmed ? "Trade entries armed" : "Trade entries disarmed"}</small></div>
@@ -305,7 +322,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <section className="viewer-main-area page-viewer-main">
           <header className="viewer-topbar page-header-v81">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v8.7</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v8.8</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
               <h1>{activeLabel}</h1>
               <p>{activeView === "overview" ? "A professional monitoring desk for the scheduled cloud bot. The public site is view-only; the private admin page controls settings and execution." : "This page is part of the read-only viewer. Use the left navigation to move between dashboard sections without changing the bot."}</p>
             </div>
@@ -319,22 +336,50 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
           {activeView === "activity" ? activityPanel : null}
         </section>
 
-        <aside className="viewer-inspector" aria-label="Signal inspector">
-          <section className="dash-panel selected-card pro-selected-card inspector-card"><h2>{selectedSymbol}</h2><div className="selected-score"><span>{selectedSignal?.score ?? selectedGrade?.score ?? "—"}</span><div><strong>{selectedSignal?.bias || selectedGrade?.bias || "Watch"}</strong><small>{selectedSignal?.setup || selectedGrade?.setupType || "No current signal"}</small></div></div><div className="mini-stack"><StatTile label="Entry" value={formatPrice(selectedSignal?.entry ?? selectedGrade?.entry)} /><StatTile label="Stop" value={formatPrice(selectedSignal?.stop ?? selectedGrade?.stop)} /><StatTile label="Target" value={formatPrice(selectedSignal?.target ?? selectedGrade?.target)} /><StatTile label="R/R" value={selectedSignal?.rr ? `${Number(selectedSignal.rr).toFixed(2)}:1` : selectedGrade ? `${selectedGrade.rr}:1` : "—"} /></div><p className="setup-summary">{selectedStatus}</p></section>
+        <aside className="viewer-inspector viewer-inspector-v88" aria-label="Viewer status rail">
+          <div className="rail-title-v88">
+            <span className="eyebrow">Read-only rail</span>
+            <h2>Live status</h2>
+            <p>Quick view of what the bot is doing without changing settings.</p>
+          </div>
 
-          <section className="dash-panel inspector-card system-snapshot-card compact-snapshot-v81">
-            <h2>System snapshot</h2>
-            <div className="rule-stack">
-              <div><span>Mode</span><strong>Autonomous cloud bot</strong><small>Cron every 15 min; viewer is read-only.</small></div>
-              <div><span>Active rules</span><strong>{currentScanLimit} tracked symbols</strong><small>{currentTimeframe}</small></div>
-              <div><span>Risk</span><strong>{bot?.settings?.riskPct || 1}% per trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1}</small></div>
-              <div><span>Broker bridge</span><strong>{bot?.settings?.brokerMode || "Supabase Simulation"}</strong><small>{bot?.settings?.brokerLiveEnabled ? "Alpaca Live bridge selected" : bot?.settings?.brokerPaperEnabled ? "Alpaca Paper bridge enabled" : "Broker submissions off"}</small></div>
+          <section className="dash-panel rail-card-v88 rail-hero-v88">
+            <h2>{selectedSymbol}</h2>
+            <div className="selected-score compact-selected-v88">
+              <span>{selectedSignal?.score ?? selectedGrade?.score ?? "—"}</span>
+              <div><strong>{selectedSignal?.bias || selectedGrade?.bias || "Watch"}</strong><small>{selectedSignal?.setup || selectedGrade?.setupType || "No current signal"}</small></div>
+            </div>
+            <div className="rail-stack-v88">
+              <RailRow label="Signal" value={selectedStatus} helper="Selected symbol from the viewer." tone={selectedSignal?.actionable ? "good" : "info"} />
+              <RailRow label="Entry / stop / target" value={`${formatPrice(selectedSignal?.entry ?? selectedGrade?.entry)} / ${formatPrice(selectedSignal?.stop ?? selectedGrade?.stop)} / ${formatPrice(selectedSignal?.target ?? selectedGrade?.target)}`} helper={selectedSignal?.rr ? `${Number(selectedSignal.rr).toFixed(2)} R/R` : selectedGrade ? `${selectedGrade.rr}:1 R/R` : "No active levels"} tone="neutral" />
             </div>
           </section>
 
-          <section id="positions" className="dash-panel cloud-bot-panel inspector-card"><div className="panel-heading-row"><div><h2>Open bot trade records</h2><p>Server-side trade records saved in Supabase. Broker mode is shown when enabled.</p></div><span className="small-pill">{openTrades.length}</span></div><div className="position-list">{openTrades.length ? openTrades.map((p) => (<div key={p.id} className="position-row open" onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · {p.execution_mode || "bot record"}</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div></div>)) : <p className="muted">No open bot trade records yet.</p>}</div></section>
+          <section className="dash-panel rail-card-v88">
+            <h2>Bot status</h2>
+            <div className="rail-stack-v88">
+              <RailRow label="Engine" value={botEngineRunning ? "Running" : "Paused"} helper={tradeArmed ? "Execution armed from admin." : "Execution disarmed from admin."} tone={botEngineRunning ? "good" : "warn"} />
+              <RailRow label="Mode" value={bot?.settings?.brokerMode || "Supabase Simulation"} helper={bot?.settings?.brokerLiveEnabled ? "Live route selected; safety gates still apply." : bot?.settings?.brokerPaperEnabled ? "Alpaca Paper route selected." : "Internal paper records only."} tone={bot?.settings?.brokerLiveEnabled ? "bad" : "good"} />
+              <RailRow label="Watchlist" value={`${currentScanLimit} tracked`} helper={`${currentTimeframe} · scan limit controlled in admin.`} tone="info" />
+              <RailRow label="Last run" value={lastBotEvent ? formatDateTime(lastBotEvent.created_at) : "Waiting"} helper={lastBotEvent?.message || "No bot event loaded yet."} tone={lastBotEvent?.event_type?.includes("error") ? "bad" : "info"} />
+            </div>
+          </section>
 
-          <section id="activity" className="dash-panel event-panel-v78 inspector-card"><div className="panel-heading-row"><div><h2>Cloud bot activity</h2><p>Every cron/manual event appears here.</p></div></div><div className="activity-list timeline-list">{events.length ? events.slice(0, 12).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{event.message}</span></div>) : <p className="muted">No cloud events yet.</p>}</div></section>
+          <section className="dash-panel rail-card-v88">
+            <h2>Broker + records</h2>
+            <div className="rail-stack-v88">
+              <RailRow label="Broker" value={bot?.broker?.canSubmitOrders ? "Order route ready" : bot?.settings?.brokerPaperEnabled ? "Checking paper route" : "Not required"} helper={bot?.broker?.message || bot?.broker?.error || "Broker status loads from the cloud API."} tone={bot?.broker?.canSubmitOrders ? "good" : bot?.settings?.brokerPaperEnabled ? "warn" : "info"} />
+              <RailRow label="Open records" value={openTrades.length} helper={`${closedTrades.length} recent closed records loaded.`} tone={openTrades.length ? "good" : "neutral"} />
+              <RailRow label="Tracked equity" value={money(paperEquity)} helper={`${percent(returnPct)} total · ${money(realizedPnl)} realized.`} tone={paperEquity >= startingEquity ? "good" : "bad"} />
+            </div>
+          </section>
+
+          <section id="activity" className="dash-panel rail-card-v88">
+            <div className="panel-heading-row"><div><h2>Latest activity</h2><p>Most recent cron/manual events.</p></div></div>
+            <div className="activity-list timeline-list rail-activity-list-v88">
+              {events.length ? events.slice(0, 8).map((event) => <div key={event.id}><b>{formatDateTime(event.created_at)}</b><span>{event.message}</span></div>) : <p className="muted">No cloud events yet.</p>}
+            </div>
+          </section>
         </aside>
       </div>
     </main>
