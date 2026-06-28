@@ -2707,3 +2707,35 @@ body {
   .autonomous-start-card { grid-template-columns: 1fr; }
   .big-arm-button { width: 100%; }
 }
+
+
+/* v8.5 simplified admin control panel */
+.admin-v85 .viewer-main-area { max-width: 1160px; }
+.admin-v85 .admin-header-v85 h1 { font-size: clamp(2.2rem, 4vw, 4.6rem); }
+.admin-v85 .preflight-panel-v85,
+.admin-v85 .execution-panel-v85,
+.admin-v85 .watchlist-panel-v85 { background: rgba(15, 22, 34, 0.94); border-color: var(--exec-line); }
+.preflight-grid-v85 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.preflight-card-v85 { display: grid; gap: 6px; padding: 14px; border-radius: 16px; border: 1px solid var(--exec-line); background: rgba(8, 13, 24, 0.72); }
+.preflight-card-v85 span { color: var(--exec-beige); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.68rem; font-weight: 850; }
+.preflight-card-v85 strong { color: var(--exec-white); font-size: 1rem; }
+.preflight-card-v85 small { color: var(--exec-muted); line-height: 1.35; }
+.preflight-card-v85.ok { border-color: rgba(69,183,120,0.34); }
+.preflight-card-v85.warn { border-color: rgba(196,154,74,0.36); }
+.preflight-card-v85.bad { border-color: rgba(180,90,90,0.36); }
+.route-mode-grid-v85 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 14px 0; }
+.route-mode-card-v85 { min-height: 150px; text-align: left; display: grid; align-content: start; gap: 8px; padding: 16px; border-radius: 18px; background: rgba(8, 13, 24, 0.72) !important; border: 1px solid var(--exec-line) !important; color: var(--exec-white) !important; }
+.route-mode-card-v85 span { color: var(--exec-beige); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.7rem; font-weight: 900; }
+.route-mode-card-v85 strong { font-size: 1.12rem; }
+.route-mode-card-v85 small { color: var(--exec-muted); line-height: 1.4; }
+.route-mode-card-v85.selected { border-color: rgba(216,195,165,0.62) !important; background: linear-gradient(180deg, rgba(29, 42, 62, 0.98), rgba(12, 18, 30, 0.94)) !important; box-shadow: inset 0 0 0 1px rgba(216,195,165,0.20); }
+.route-mode-card-v85.live.selected { border-color: rgba(180,90,90,0.48) !important; }
+.execution-command-bar-v85 { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 14px; border-radius: 16px; border: 1px solid var(--exec-line); background: rgba(8, 13, 24, 0.52); }
+.execution-command-bar-v85 span { display: block; color: var(--exec-beige); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.68rem; font-weight: 850; }
+.execution-command-bar-v85 strong { display: block; color: var(--exec-white); font-size: 1.05rem; margin-top: 4px; }
+.execution-command-bar-v85 small { display: block; color: var(--exec-muted); margin-top: 4px; max-width: 720px; }
+.symbol-chip-list-v85 { display: flex; flex-wrap: wrap; gap: 6px; max-height: 140px; overflow: auto; padding: 10px; border-radius: 14px; border: 1px solid var(--exec-line); background: rgba(8, 13, 24, 0.46); margin: 8px 0 14px; }
+.symbol-chip-list-v85 span { border: 1px solid rgba(216,195,165,0.18); background: rgba(216,195,165,0.06); color: var(--exec-paper); border-radius: 999px; padding: 5px 8px; font-size: 0.74rem; font-weight: 800; }
+.admin-v85 .watchlist-panel-v85 textarea { min-height: 112px; }
+.admin-v85 .execution-note { border-color: rgba(216,195,165,0.18); background: rgba(216,195,165,0.055); color: var(--exec-paper); }
+@media (max-width: 1180px) { .preflight-grid-v85, .route-mode-grid-v85 { grid-template-columns: 1fr; } .execution-command-bar-v85 { grid-template-columns: 1fr; } }

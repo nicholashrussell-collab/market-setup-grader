@@ -194,3 +194,11 @@ alter table public.bot_control add column if not exists broker_live_enabled bool
 update public.bot_control
 set broker_live_enabled = coalesce(broker_live_enabled, false)
 where id = 'main';
+
+
+-- v8.5 admin watchlist editor. Safe to run multiple times.
+alter table public.bot_control add column if not exists custom_symbols text;
+
+update public.bot_control
+set custom_symbols = coalesce(custom_symbols, '')
+where id = 'main';

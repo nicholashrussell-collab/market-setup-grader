@@ -14,6 +14,8 @@ function settingsPayload(settings: Awaited<ReturnType<typeof getRuntimeCloudBotS
   return {
     universeLabel: settings.universeLabel,
     symbols: settings.symbols.length,
+    symbolsList: settings.symbols,
+    customSymbols: settings.customSymbols || "",
     timeframe: settings.timeframe,
     enabled: settings.enabled,
     maxOpenPositions: settings.maxOpenPositions,

@@ -29,6 +29,7 @@ export type CloudBotSettings = {
   brokerMode: BrokerExecutionMode;
   brokerPaperEnabled: boolean;
   brokerLiveEnabled: boolean;
+  customSymbols?: string;
 };
 
 export const CORE_9_SYMBOLS = "AAPL, MSFT, NVDA, AMZN, META, GOOGL, TSLA, SPY, QQQ";
@@ -110,18 +111,23 @@ export type BotControlRow = {
   broker_mode?: string;
   broker_paper_enabled?: boolean;
   broker_live_enabled?: boolean;
+  custom_symbols?: string;
 };
 
 function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): CloudBotSettings {
   if (!row) return base;
   const universeLabel = row.universe_label || base.universeLabel;
   const scanLimit = Number(row.scan_limit ?? base.scanLimit);
+  const hasCustomSymbols = Boolean((row.custom_symbols || "").trim());
+  const symbols = hasCustomSymbols
+    ? parseSymbols(row.custom_symbols || "", Number.isFinite(scanLimit) ? scanLimit : base.scanLimit)
+    : getUniverseSymbols(universeLabel).slice(0, Number.isFinite(scanLimit) ? scanLimit : base.scanLimit);
   return {
     ...base,
     enabled: typeof row.bot_enabled === "boolean" ? row.bot_enabled : base.enabled,
     paperTradingEnabled: typeof row.paper_trading_enabled === "boolean" ? row.paper_trading_enabled : base.paperTradingEnabled,
     universeLabel,
-    symbols: getUniverseSymbols(universeLabel).slice(0, Number.isFinite(scanLimit) ? scanLimit : base.scanLimit),
+    symbols,
     timeframe: (row.timeframe as Timeframe) || base.timeframe,
     minScore: Number(row.min_score ?? base.minScore),
     maxScore: Number(row.max_score ?? base.maxScore),
@@ -136,6 +142,7 @@ function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): Cl
     brokerMode: (row.broker_mode as BrokerExecutionMode) || base.brokerMode,
     brokerPaperEnabled: typeof row.broker_paper_enabled === "boolean" ? row.broker_paper_enabled : base.brokerPaperEnabled,
     brokerLiveEnabled: typeof row.broker_live_enabled === "boolean" ? row.broker_live_enabled : base.brokerLiveEnabled,
+    customSymbols: row.custom_symbols || "",
   };
 }
 
@@ -173,5 +180,6 @@ export function defaultBotControlRow(): BotControlRow {
     broker_mode: "Supabase Simulation",
     broker_paper_enabled: false,
     broker_live_enabled: false,
+    custom_symbols: "",
   };
 }

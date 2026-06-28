@@ -13,7 +13,7 @@ async function readControl() {
   const rows = await supabaseRest<any[]>("bot_control?id=eq.main&select=*&limit=1", { method: "GET" }).catch(() => []);
   if (rows[0]) return rows[0];
   const initial = defaultBotControlRow();
-  const created = await supabaseRest<any[]>("bot_control", {
+  const created = await supabaseRest<any[]>("bot_control?on_conflict=id", {
     method: "POST",
     headers: { Prefer: "resolution=merge-duplicates,return=representation" },
     body: JSON.stringify(initial),
@@ -21,12 +21,20 @@ async function readControl() {
   return created[0] || initial;
 }
 
+function jsonError(message: string, status = 500, extra: Record<string, unknown> = {}) {
+  return NextResponse.json({ ok: false, message, ...extra }, { status });
+}
+
 export async function GET() {
   if (!isAdminRequest()) return unauthorized();
   const status = getSupabaseConfigStatus();
   if (!status.configured) return NextResponse.json({ ok: false, configured: false, message: status.message }, { status: 400 });
-  const control = await readControl();
-  return NextResponse.json({ ok: true, configured: true, control });
+  try {
+    const control = await readControl();
+    return NextResponse.json({ ok: true, configured: true, control });
+  } catch (err) {
+    return jsonError(err instanceof Error ? err.message : "Could not load bot control settings.");
+  }
 }
 
 export async function PATCH(req: Request) {
@@ -54,14 +62,23 @@ export async function PATCH(req: Request) {
     "broker_mode",
     "broker_paper_enabled",
     "broker_live_enabled",
+    "custom_symbols",
   ];
   for (const key of keys) {
     if (Object.prototype.hasOwnProperty.call(body, key)) allowed[key] = body[key];
   }
-  const rows = await supabaseRest<any[]>("bot_control", {
-    method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-    body: JSON.stringify(allowed),
-  });
-  return NextResponse.json({ ok: true, control: rows[0] || allowed });
+  try {
+    const rows = await supabaseRest<any[]>("bot_control?on_conflict=id", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify(allowed),
+    });
+    return NextResponse.json({ ok: true, control: rows[0] || allowed });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Could not save settings.";
+    const schemaHint = message.includes("broker_live_enabled") || message.includes("custom_symbols") || message.includes("column")
+      ? "Run the latest supabase/schema.sql once in Supabase SQL Editor, then try saving again."
+      : undefined;
+    return jsonError(message, 500, schemaHint ? { schemaHint } : {});
+  }
 }
