@@ -1,4 +1,5 @@
 import { GradeProfile, TargetMode, Timeframe } from "@/lib/trading";
+import { DEFAULT_TRACKED_SYMBOLS, parseTrackedSymbols } from "@/lib/watchlist";
 
 export type ApiDataSource = "Alpaca" | "Massive";
 
@@ -32,13 +33,12 @@ export type CloudBotSettings = {
   customSymbols?: string;
 };
 
-// v8.6 removes public/admin universe presets. The bot always reads one tracked watchlist.
-// Edit this list in /admin. BOT_SYMBOLS can still override it from Vercel if needed.
-export const DEFAULT_TRACKED_SYMBOLS = "SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLY, XLV, XLI, PYPL, DIS, AAPL, NVDA, TSLA, MSFT, AMD, WMT, XOM, KO, JNJ, NFLX, JPM, GOOGL, AMZN, AVGO, COST, V, MA, LLY, UNH, HD, NKE, CRM, MCD, CAT, GE, META, ORCL, IBM, NOW, ADBE, INTU, PLTR, MU, QCOM, TXN, MRK, ABBV, TMO, PEP, SBUX, BA, GS, BAC, CVX, COP, C, MS, BLK, SCHW, AMAT, LRCX, KLAC, INTC, CSCO, PANW, CRWD, SNOW, SHOP, UBER, ABNB, BKNG, TGT, LOW, TJX, PG, CL, EL, MRNA, PFE, ISRG, DHR, CVS, WBA, DE, HON, UPS, FDX, GM, F, RTX, LMT, NOC, LIN, APD, FCX, SLB, OXY, T";
+// v8.7: admin tracked symbols are the source of truth for the cloud bot.
+// BOT_SYMBOLS can still override the saved list from Vercel if needed.
 export const TRACKED_WATCHLIST_LABEL = "Tracked Symbols";
 
 export function parseSymbols(value: string, limit = 1000) {
-  return Array.from(new Set(value.split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean))).slice(0, limit);
+  return parseTrackedSymbols(value, limit);
 }
 
 function envNumber(name: string, fallback: number) {
@@ -172,7 +172,7 @@ export function defaultBotControlRow(): BotControlRow {
     max_stale_minutes: s.maxStaleMinutes,
     allow_stale_simulation: s.allowStaleSimulation,
     scan_limit: s.scanLimit,
-    notes: "Managed from v8.6 /admin. The tracked symbols list and saved settings are the source of truth for the scheduled cloud bot.",
+    notes: "Managed from v8.7 /admin. The tracked symbols list and saved settings are the source of truth for the scheduled cloud bot.",
     broker_mode: "Supabase Simulation",
     broker_paper_enabled: false,
     broker_live_enabled: false,

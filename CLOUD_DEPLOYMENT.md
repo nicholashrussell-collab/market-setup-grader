@@ -16,7 +16,7 @@ Localhost only runs while your computer, terminal, and browser/server are awake.
 
 ## What v7.0 is meant to prove
 
-- Super Wide 100 active-only is the default paper-live benchmark.
+- Tracked symbols are the admin source of truth. Use scan limit to control each cron run.
 - The live watchlist scanner uses the same visible symbol universe as the backtest.
 - The dynamic sleeve stays in Research View because the 100-stock test showed active-only was stronger than sleeve exposure.
 - No real orders are placed.

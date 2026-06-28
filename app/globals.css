@@ -2741,6 +2741,7 @@ body {
 @media (max-width: 1180px) { .preflight-grid-v85, .route-mode-grid-v85 { grid-template-columns: 1fr; } .execution-command-bar-v85 { grid-template-columns: 1fr; } }
 
 /* v8.6 tracked-watchlist control room and readable rails */
+/* v8.7 overrides below turn the admin into a week-ready pinned control room. */
 .admin-v86, .viewer-v86 {
   --rail-left: clamp(232px, 14vw, 270px);
   --rail-right: clamp(390px, 23vw, 470px);
@@ -2917,5 +2918,388 @@ body {
   .viewer-v86 .viewer-metrics-grid,
   .viewer-v86 .secondary-metrics {
     grid-template-columns: 1fr;
+  }
+}
+
+/* v8.7 week-ready control room polish */
+.admin-v87 {
+  --rail-left: 262px;
+  --rail-right: 438px;
+  --admin-gap: 28px;
+  --admin-pad: 24px;
+  --content-max: 1160px;
+}
+
+.state-dot.info {
+  background: #4f8cff;
+  box-shadow: 0 0 0 5px rgba(79, 140, 255, 0.14), 0 0 22px rgba(79, 140, 255, 0.42);
+}
+
+.admin-v87 .admin-workspace-v87 {
+  display: block;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--admin-pad) calc(var(--rail-right) + var(--admin-gap)) 64px calc(var(--rail-left) + var(--admin-gap));
+}
+
+.admin-v87 .admin-left-rail-v87 {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 30;
+  width: var(--rail-left);
+  height: 100vh;
+  max-height: none;
+  border-radius: 0;
+  border-width: 0 1px 0 0;
+  padding: 20px;
+  background: linear-gradient(180deg, rgba(5, 10, 19, 0.98), rgba(7, 13, 24, 0.98));
+}
+
+.admin-v87 .admin-inspector-v87 {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 25;
+  width: var(--rail-right);
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  padding: 20px 16px 24px;
+  border-left: 1px solid var(--pro-line);
+  background: linear-gradient(180deg, rgba(8, 13, 24, 0.98), rgba(7, 11, 19, 0.98));
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.admin-v87 .admin-main-v87 {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  display: grid;
+  gap: 20px;
+}
+
+.admin-v87 .viewer-topbar,
+.admin-v87 .dash-panel,
+.admin-v87 .dash-tile {
+  border-color: rgba(216, 195, 165, 0.16);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+}
+
+.admin-v87 .admin-header-v87 {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+  padding: 28px;
+  border-radius: 26px;
+}
+
+.admin-v87 .admin-header-v87 h1 {
+  max-width: 860px;
+  font-size: clamp(2.35rem, 4.2vw, 4.9rem);
+  letter-spacing: -0.07em;
+}
+
+.admin-v87 .admin-header-v87 p {
+  max-width: 800px;
+  color: #cbd7e6;
+}
+
+.admin-v87 .admin-current-state-card-v87 {
+  min-height: 150px;
+}
+
+.admin-v87 .admin-top-metrics-v87 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-v87 .admin-top-metrics-v87 .dash-tile {
+  min-height: 104px;
+  padding: 18px;
+}
+
+.admin-v87 .admin-top-metrics-v87 .dash-tile strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.08;
+}
+
+.admin-v87 .admin-status-panel-v87,
+.admin-v87 .execution-panel-v87,
+.admin-v87 .settings-panel-v87,
+.admin-v87 .watchlist-panel-v87 {
+  padding: 22px;
+  border-radius: 24px;
+}
+
+.admin-v87 .preflight-grid-v87 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-v87 .admin-status-card-v87 {
+  min-height: 132px;
+  padding: 16px;
+}
+
+.admin-v87 .admin-status-card-v87.good { border-color: rgba(69, 183, 120, 0.36); background: linear-gradient(180deg, rgba(34, 197, 94, 0.08), rgba(8, 13, 24, 0.72)); }
+.admin-v87 .admin-status-card-v87.warn { border-color: rgba(216, 195, 165, 0.32); background: linear-gradient(180deg, rgba(216, 195, 165, 0.08), rgba(8, 13, 24, 0.72)); }
+.admin-v87 .admin-status-card-v87.bad { border-color: rgba(239, 68, 68, 0.34); background: linear-gradient(180deg, rgba(239, 68, 68, 0.08), rgba(8, 13, 24, 0.72)); }
+.admin-v87 .admin-status-card-v87.info { border-color: rgba(79, 140, 255, 0.32); }
+
+.admin-v87 .route-mode-grid-v87 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-v87 .route-mode-card-v85 {
+  min-height: 160px;
+  padding: 18px;
+}
+
+.admin-v87 .route-mode-card-v85 small {
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.admin-v87 .execution-command-bar-v87 {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.admin-v87 .admin-primary-actions {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.admin-v87 .admin-primary-actions button {
+  min-height: 42px;
+}
+
+.admin-v87 .settings-grid-v87 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.admin-v87 .settings-grid-v87 label {
+  min-width: 0;
+}
+
+.admin-v87 .settings-grid-v87 input,
+.admin-v87 .settings-grid-v87 select {
+  min-height: 42px;
+}
+
+.watchlist-summary-v87 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 0 14px;
+}
+
+.watchlist-summary-v87 > div {
+  border: 1px solid var(--pro-line);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(8, 13, 24, 0.55);
+}
+
+.watchlist-summary-v87 strong,
+.watchlist-summary-v87 span {
+  display: block;
+}
+
+.watchlist-summary-v87 strong {
+  font-size: 1.4rem;
+  color: #f8fafc;
+}
+
+.watchlist-summary-v87 span {
+  color: var(--pro-muted);
+  margin-top: 3px;
+  font-size: 0.82rem;
+}
+
+.admin-v87 .symbol-chip-list-v87 {
+  max-height: 210px;
+  padding: 12px;
+}
+
+.admin-v87 .watchlist-panel-v87 textarea {
+  min-height: 260px;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.admin-v87 .watchlist-actions-v87 {
+  justify-content: flex-start;
+}
+
+.admin-v87 .admin-inspector-v87 .dash-panel {
+  margin: 0 0 14px;
+  padding: 16px;
+  border-radius: 20px;
+  overflow: visible;
+}
+
+.inspector-hero-v87 {
+  border-color: rgba(79, 140, 255, 0.28) !important;
+  background: linear-gradient(180deg, rgba(79, 140, 255, 0.08), rgba(10, 16, 29, 0.94)) !important;
+}
+
+.snapshot-stack-v87 {
+  display: grid;
+  gap: 10px;
+}
+
+.snapshot-row-v87 {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--pro-line);
+  border-radius: 16px;
+  background: rgba(5, 10, 20, 0.46);
+}
+
+.snapshot-row-v87 span,
+.snapshot-row-v87 strong,
+.snapshot-row-v87 small {
+  display: block;
+}
+
+.snapshot-row-v87 span {
+  color: var(--exec-beige);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.snapshot-row-v87 strong {
+  margin-top: 4px;
+  color: #f8fafc;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.snapshot-row-v87 small {
+  margin-top: 5px;
+  color: var(--pro-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.admin-v87 .readable-stack-v87 > div,
+.admin-v87 .research-list > div,
+.admin-v87 .timeline-list div,
+.admin-v87 .position-row {
+  border-radius: 16px;
+  padding: 12px;
+}
+
+.admin-v87 .rule-stack strong,
+.admin-v87 .rule-stack small,
+.admin-v87 .timeline-list span,
+.admin-v87 .timeline-list small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.admin-v87 .timeline-list small {
+  color: var(--pro-muted);
+}
+
+.admin-v87 .scroll-card-v87,
+.admin-v87 .activity-list.scroll-card-v87 {
+  max-height: 340px;
+}
+
+.admin-v87 .sidebar-nav {
+  gap: 9px;
+}
+
+.admin-v87 .sidebar-nav a {
+  padding: 13px 12px;
+}
+
+.admin-v87 .sidebar-nav a span,
+.admin-v87 .sidebar-nav a small {
+  display: block;
+}
+
+.admin-v87 .sidebar-nav a small {
+  margin-top: 3px;
+  color: var(--pro-muted);
+  font-size: 0.73rem;
+  line-height: 1.25;
+}
+
+.admin-v87 .sidebar-system-v87 {
+  margin-top: auto;
+}
+
+.admin-v87 .safety-card-v87 {
+  margin-bottom: 0;
+}
+
+@media (max-width: 1500px) {
+  .admin-v87 {
+    --rail-left: 244px;
+    --rail-right: 398px;
+    --admin-gap: 22px;
+    --content-max: 1030px;
+  }
+  .admin-v87 .admin-top-metrics-v87,
+  .admin-v87 .settings-grid-v87 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-v87 .preflight-grid-v87,
+  .admin-v87 .route-mode-grid-v87 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1180px) {
+  .admin-v87 .admin-workspace-v87 {
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+  .admin-v87 .admin-left-rail-v87,
+  .admin-v87 .admin-inspector-v87 {
+    position: static;
+    width: auto;
+    height: auto;
+    max-height: none;
+    border-radius: 20px;
+    border: 1px solid var(--pro-line);
+  }
+  .admin-v87 .admin-inspector-v87 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 0;
+    background: transparent;
+    border: 0;
+  }
+  .admin-v87 .admin-main-v87 {
+    max-width: none;
+    margin: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-v87 .admin-header-v87,
+  .admin-v87 .admin-top-metrics-v87,
+  .admin-v87 .settings-grid-v87,
+  .admin-v87 .preflight-grid-v87,
+  .admin-v87 .route-mode-grid-v87,
+  .watchlist-summary-v87,
+  .admin-v87 .admin-inspector-v87 {
+    grid-template-columns: 1fr;
+  }
+  .admin-v87 .admin-header-v87 h1 {
+    font-size: clamp(2.2rem, 14vw, 3.3rem);
   }
 }

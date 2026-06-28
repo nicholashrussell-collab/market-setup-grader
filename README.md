@@ -1,10 +1,10 @@
-# Market Setup Grader v8.6
+# Market Setup Grader v8.7
 
 Tracked-watchlist control room for the autonomous cloud bot.
 
 ## Highlights
 
-- Removes Super Wide/Core preset controls from Admin and the public viewer.
+- Removes Tracked/Core preset controls from Admin and the public viewer.
 - The editable Tracked Symbols list is now the cloud bot watchlist.
 - Admin shows only how many symbols are active/saved, not preset names.
 - Wider, more readable right rail with scrollable panels.
@@ -15,4 +15,4 @@ Tracked-watchlist control room for the autonomous cloud bot.
 
 Copy this folder into your existing GitHub/Vercel project, commit, and push.
 
-Run `supabase/schema.sql` once if you want the database row updated to the v8.6 tracked-symbol defaults.
+Run `supabase/schema.sql` once if you want the database row updated to the v8.7 tracked-symbol defaults.

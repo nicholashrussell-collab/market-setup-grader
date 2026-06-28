@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TradingChart from "@/components/TradingChart";
+import { DEFAULT_TRACKED_SYMBOLS } from "@/lib/watchlist";
 import {
   AppMode,
   BacktestSettings,
@@ -39,7 +40,7 @@ import {
 const JOURNAL_KEY = "market-setup-grader-v5-3-journal";
 const STRATEGY_PRESET_KEY = "market-setup-grader-v5-3-backtest-preset";
 const TIMEFRAMES: Timeframe[] = ["1Min", "5Min", "15Min", "30Min", "1Hour"];
-const SUPER_WIDE_500_SYMBOLS = "AAPL, MSFT, NVDA, AMZN, META, GOOGL, GOOG, AVGO, TSLA, BRK.B, LLY, JPM, V, XOM, UNH, MA, COST, NFLX, WMT, PG, JNJ, HD, ABBV, BAC, KO, PLTR, PM, CRM, ORCL, CVX, CSCO, IBM, WFC, GE, ABT, MCD, LIN, AMD, DIS, MRK, ISRG, NOW, TMO, ACN, GS, INTU, PEP, QCOM, TXN, VZ, BKNG, CAT, RTX, AXP, MS, AMGN, C, SPGI, UBER, LOW, PGR, HON, ETN, BSX, NEE, DHR, BLK, TJX, BA, SCHW, SYK, GILD, ADP, DE, MDT, PANW, COP, LMT, ADI, CB, MMC, UPS, PLD, FI, AMAT, SBUX, BMY, ELV, ANET, MU, LRCX, KLAC, SO, TMUS, ICE, MO, CME, AMT, WM, WELL, CEG, MCO, SHW, EQIX, PH, CI, CDNS, HCA, CRWD, APH, MDLZ, MMM, NKE, MSI, ORLY, TDG, SNPS, AJG, COF, ECL, ZTS, USB, ITW, CVS, EMR, WMB, PYPL, AON, MAR, NOC, CMG, GD, REGN, PNC, FTNT, ROP, TFC, CARR, APD, BK, CSX, FCX, ABNB, NSC, JCI, AZO, AEP, TRV, HLT, TGT, ADSK, URI, SLB, COR, NXPI, RSG, PWR, AFL, GM, MPC, HWM, SRE, PSX, ALL, PCAR, O, OKE, VLO, DHI, GWW, SPG, KMI, FICO, TEL, CPRT, MET, PSA, DFS, AIG, RCL, EW, CCI, MSCI, LHX, AMP, FANG, CMI, KDP, FAST, VST, KMB, KR, KVUE, PAYX, HES, BKR, PRU, PEG, CTVA, ACGL, CTSH, FIS, ODFL, VRSK, EXC, TRGP, YUM, IT, EOG, GEHC, RMD, XEL, GLW, IR, DAL, CHTR, CBOE, EA, LEN, OTIS, MNST, ED, MLM, VMC, MPWR, NUE, DXCM, WAB, IQV, ROK, HPQ, MTB, DD, HIG, GRMN, NDAQ, STZ, AVB, EFX, CBRE, EIX, BRO, FITB, CAH, MCHP, XYL, TSCO, KHC, HPE, DOW, WEC, ANSS, TROW, KEYS, NVR, DTE, FSLR, VLTO, WBD, HAL, HSY, STT, EQR, SYF, GPN, APTV, ADM, PPG, DVN, AWK, WY, WTW, LYB, DOV, WST, BR, CINF, DECK, WDC, ETR, EXR, CHD, TYL, PHM, VTR, AEE, TER, STE, WAT, ZBH, NTAP, RF, PPL, FE, ES, OMC, HUBB, SBAC, MKC, NTRS, CCL, HBAN, LDOS, INVH, GDDY, CNP, CMS, BALL, COO, LULU, DG, LH, LUV, ULTA, J, NDSN, MOH, ESS, PFG, CTAS, TXT, IEX, DPZ, SWKS, STX, AVY, MAS, EG, DRI, HOLX, BBY, CLX, TPR, K, MTCH, CF, TRMB, GEN, AES, PKG, ALLE, JBHT, TSN, ARE, AKAM, IP, EVRG, PTC, WRB, VRSN, SNA, KIM, RL, EPAM, CAG, LKQ, NWSA, UAL, INCY, BAX, FDS, POOL, UDR, ATO, HST, HII, REG, WYNN, NCLH, QRVO, BXP, TAP, BEN, DAY, SJM, FOXA, EMN, MKTX, AOS, CRL, ROL, MHK, FFIV, GNRC, CPB, AIZ, HAS, BWA, ETSY, IVZ, APA, PAYC, CZR, TECH, BIO, CTLT, GL, HSIC, MGM, CMA, MOS, SOLV, FMC, PARA, MRNA, WBA, ENPH, DVA, AAL, XRAY, VFC, NWS, FOX, PNW, ALB, SWK, CE, LW, CTRA, NI, EXPE, FRT, HRL, TFX, NEM, KMX, DOC, MAA, CPT, ZBRA, ALGN, ROST, PFE, JNPR, JBL, WSM, NET, DDOG, SNOW, MDB, TEAM, OKTA, SHOP, SQ, COIN, RBLX, PATH, U, DASH, PINS, TWLO, ZM, DOCU, AFRM, HOOD, SOFI, DKNG, RIVN, LCID, FUBO, CHWY, SE, BABA, JD, BIDU, TSM, ASML, NVO, ARM, SMCI, DELL, INTC, MRVL, ON, CRUS, ALGM, LSCC, RUN, BE, STEM, PLUG, FCEL, BLNK, VRT, TT, X, CLF, AA, SCCO, TECK, GOLD, AEM, FNV, WPM, RIO, BHP, VALE, NTR, BG, GIS";
+const TRACKED_500_SYMBOLS = DEFAULT_TRACKED_SYMBOLS;
 type ApiDataSource = "Alpaca" | "Massive";
 type BacktestDataSource = ApiDataSource | "CSV";
 type AlpacaAdjustment = "raw" | "split" | "dividend" | "all";
@@ -127,11 +128,11 @@ const ACCOUNT_POLICY_LABELS: Record<AccountPolicy, string> = {
   V60_LEADER_SWEEP: "v6.0 opportunity + sleeve sweep",
   V61_SLEEVE_BENCHMARK: "v6.1 practical 15% simulated sleeve",
   V62_REAL_SLEEVE: "v6.2 simulated 15% leader sleeve",
-  V63_SUPER_WIDE: "v6.3 super wide + 25% sleeve benchmark",
+  V63_SUPER_WIDE: "v6.3 wide research + 25% sleeve benchmark",
   V64_DYNAMIC_SLEEVE: "v6.4 dynamic rotating 25% sleeve",
-  V65_SUPER_WIDE_50: "v6.5 super wide 50 + dynamic 25% sleeve",
-  V66_SLEEVE_100_AUDIT: "v6.6 super wide 50 + 0-100% sleeve audit",
-  V67_LIVE_STYLE_SIM: "v6.7 live-style super wide 50 simulator",
+  V65_SUPER_WIDE_50: "v6.5 wide research 50 + dynamic 25% sleeve",
+  V66_SLEEVE_100_AUDIT: "v6.6 wide research 50 + 0-100% sleeve audit",
+  V67_LIVE_STYLE_SIM: "v6.7 live-style wide research 50 simulator",
   V68_100_TRADE_READINESS: "v6.8 100-trade live readiness simulator",
   V69_LIVE_100_STOCK_SIM: "v6.9 live 100-stock simulator",
   V70_PAPER_LIVE_ACTIVE: "v7.1 active quality gate",
@@ -1964,7 +1965,7 @@ export default function Home() {
   const [btMaxPositionPct, setBtMaxPositionPct] = useState(25);
   const [backtest, setBacktest] = useState<BacktestSummary | null>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
-  const [basketSymbols, setBasketSymbols] = useState(SUPER_WIDE_500_SYMBOLS);
+  const [basketSymbols, setBasketSymbols] = useState(TRACKED_500_SYMBOLS);
   const [basketResults, setBasketResults] = useState<BasketResult[]>([]);
   const [basketPortfolio, setBasketPortfolio] = useState<BasketPortfolioSummary | null>(null);
   const [basketPolicyComparisons, setBasketPolicyComparisons] = useState<AccountPolicyComparison[]>([]);
@@ -2550,8 +2551,8 @@ export default function Home() {
       { label: "Small slots 20% / 5 slots / 1% / 5%", maxPositionPct: 20, maxOpenTrades: 5, riskPercent: 1, maxTotalRiskPct: 5, accountPolicy: basketAccountPolicy },
       { label: "Conservative wide 20% / 6 slots / 0.5% / 4%", maxPositionPct: 20, maxOpenTrades: 6, riskPercent: 0.5, maxTotalRiskPct: 4, accountPolicy: basketAccountPolicy },
       { label: "Safer risk 25% / 4 slots / 0.75% / 3%", maxPositionPct: 25, maxOpenTrades: 4, riskPercent: 0.75, maxTotalRiskPct: 3, accountPolicy: basketAccountPolicy },
-      { label: "v6.6 super wide 50 0-100% sleeve audit 25% / 4 / 1% / 4%", maxPositionPct: 25, maxOpenTrades: 4, riskPercent: 1, maxTotalRiskPct: 4, accountPolicy: "V66_SLEEVE_100_AUDIT" },
-      { label: "v6.7 live-style super wide 50 25% / 4 / 1% / 4%", maxPositionPct: 25, maxOpenTrades: 4, riskPercent: 1, maxTotalRiskPct: 4, accountPolicy: "V67_LIVE_STYLE_SIM" },
+      { label: "v6.6 wide research 50 0-100% sleeve audit 25% / 4 / 1% / 4%", maxPositionPct: 25, maxOpenTrades: 4, riskPercent: 1, maxTotalRiskPct: 4, accountPolicy: "V66_SLEEVE_100_AUDIT" },
+      { label: "v6.7 live-style wide research 50 25% / 4 / 1% / 4%", maxPositionPct: 25, maxOpenTrades: 4, riskPercent: 1, maxTotalRiskPct: 4, accountPolicy: "V67_LIVE_STYLE_SIM" },
       { label: "v6.9 live 100-stock simulator 25% / 4 / 1% / 4%", maxPositionPct: 25, maxOpenTrades: 4, riskPercent: 1, maxTotalRiskPct: 4, accountPolicy: "V69_LIVE_100_STOCK_SIM" },
       { label: "v7.2 active quality gate active-only 25% / 4 / 1% / 4%", maxPositionPct: 25, maxOpenTrades: 4, riskPercent: 1, maxTotalRiskPct: 4, accountPolicy: "V70_PAPER_LIVE_ACTIVE" },
       { label: "v7.1 active quality gate 25% / 4 / 1% / 4%", maxPositionPct: 25, maxOpenTrades: 4, riskPercent: 1, maxTotalRiskPct: 4, accountPolicy: "V71_ACTIVE_QUALITY_GATE" },
@@ -3024,7 +3025,7 @@ export default function Home() {
     setBasketMaxTotalRisk(4);
     setBasketAccountPolicy("V71_ACTIVE_QUALITY_GATE");
     loadSuperWideHundredBasket();
-    setStatus("Loaded v7.2 active quality gate: $5k cash account, long/cash only, Super Wide 500 stress test, active-only default, sleeve kept as research-only, and live watchlist controls.");
+    setStatus("Loaded v7.2 active quality gate: $5k cash account, long/cash only, tracked 500-symbol research universe, active-only default, sleeve kept as research-only, and watchlist controls.");
   };
 
   const loadBaseNineBasket = () => {
@@ -3104,7 +3105,7 @@ export default function Home() {
     setBtMaxPositionPct(25);
     setBtRiskPercent(1);
     setBasketAccountPolicy("V71_ACTIVE_QUALITY_GATE");
-    setStatus("Loaded Super Wide 30: broad liquid universe, 25% position, 4 slots, 1% risk/trade, 4% max total risk, and 25% dynamic leader sleeve benchmark.");
+    setStatus("Loaded Tracked Research 30: broad liquid universe, 25% position, 4 slots, 1% risk/trade, 4% max total risk, and 25% dynamic leader sleeve benchmark.");
   };
 
   const loadSuperWideFiftyBasket = () => {
@@ -3114,7 +3115,7 @@ export default function Home() {
     setBtMaxPositionPct(25);
     setBtRiskPercent(1);
     setBasketAccountPolicy("V71_ACTIVE_QUALITY_GATE");
-    setStatus("Loaded Super Wide 50: larger liquid universe stress test, 25% position, 4 slots, 1% risk/trade, 4% max total risk, and dynamic sleeve audit from 0% to 100%. Expect this to take longer than 30 symbols.");
+    setStatus("Loaded Tracked Research 50: larger liquid universe stress test, 25% position, 4 slots, 1% risk/trade, 4% max total risk, and dynamic sleeve audit from 0% to 100%. Expect this to take longer than 30 symbols.");
   };
 
   const loadSuperWideHundredBasket = () => {
@@ -3126,11 +3127,11 @@ export default function Home() {
     setBtStart("2020-09-15");
     setBtEnd("2026-05-31");
     setBasketAccountPolicy("V71_ACTIVE_QUALITY_GATE");
-    setStatus("Loaded Super Wide 100: 100-stock paper-live universe, 25% position, 4 slots, 1% risk/trade, 4% max total risk, active-only default, and live watchlist controls. Expect a longer scan.");
+    setStatus("Loaded Tracked Research 100: 100-stock paper-style universe, 25% position, 4 slots, 1% risk/trade, 4% max total risk, active-only default, and watchlist controls. Expect a longer scan.");
   };
 
   const loadSuperWideFiveHundredBasket = () => {
-    setBasketSymbols(SUPER_WIDE_500_SYMBOLS);
+    setBasketSymbols(TRACKED_500_SYMBOLS);
     setBasketMaxOpenTrades(4);
     setBasketMaxTotalRisk(4);
     setBtMaxPositionPct(25);
@@ -3138,7 +3139,7 @@ export default function Home() {
     setBtStart("2020-09-15");
     setBtEnd("2026-05-31");
     setBasketAccountPolicy("V72_500_ACTIVE_QUALITY_GATE");
-    setStatus("Loaded Super Wide 500: 500-stock stress-test universe, active-only quality gate, 25% max position, 4 slots, 1% risk/trade, 4% max total risk. Expect this to take much longer; use it as a research/cloud-readiness stress test.");
+    setStatus("Loaded Tracked Research 500: 500-symbol stress-test universe, active-only quality gate, 25% max position, 4 slots, 1% risk/trade, 4% max total risk. Expect this to take much longer; use it as a research/cloud-readiness stress test.");
   };
 
   const loadBearShortPreset = () => {
@@ -3215,7 +3216,7 @@ export default function Home() {
           <div className="eyebrow">Research lab / paper-trading prep</div>
           <h1>Market Setup Grader v7.3</h1>
           <p>
-            v7.2 keeps the active-only quality gate and adds a Super Wide 500 stress-test universe. Use 100 stocks for paper-live stability and 500 stocks for research/cloud-readiness testing.
+            v7.2 keeps the active-only quality gate and adds a tracked 500-symbol stress-test universe. Use 100 symbols for paper-style stability and 500 symbols for research/cloud-readiness testing.
           </p>
         </div>
         <div className="mode-card">
@@ -3728,7 +3729,7 @@ export default function Home() {
               </label>
               <label>
                 Main benchmark
-                <input readOnly value="Super Wide 500 · active-only quality-gate stress test" />
+                <input readOnly value="Tracked Research 500 · active-only quality-gate stress test" />
               </label>
             </div>
           </div>
@@ -3790,11 +3791,11 @@ export default function Home() {
                 <option value="V60_LEADER_SWEEP">v6.0 opportunity + sleeve sweep</option>
                 <option value="V61_SLEEVE_BENCHMARK">v6.1 practical 15% simulated sleeve</option>
                 <option value="V62_REAL_SLEEVE">v6.2 simulated 15% leader sleeve</option>
-                <option value="V63_SUPER_WIDE">v6.3 super wide + 25% sleeve benchmark</option>
+                <option value="V63_SUPER_WIDE">v6.3 wide research + 25% sleeve benchmark</option>
                 <option value="V64_DYNAMIC_SLEEVE">v6.4 dynamic rotating 25% sleeve</option>
-                <option value="V65_SUPER_WIDE_50">v6.5 super wide 50 + dynamic 25% sleeve</option>
-                <option value="V66_SLEEVE_100_AUDIT">v6.6 super wide 50 + 0-100% sleeve audit</option>
-                <option value="V67_LIVE_STYLE_SIM">v6.7 live-style super wide 50 simulator</option>
+                <option value="V65_SUPER_WIDE_50">v6.5 wide research 50 + dynamic 25% sleeve</option>
+                <option value="V66_SLEEVE_100_AUDIT">v6.6 wide research 50 + 0-100% sleeve audit</option>
+                <option value="V67_LIVE_STYLE_SIM">v6.7 live-style wide research 50 simulator</option>
                 <option value="V68_100_TRADE_READINESS">v6.8 100-trade live readiness simulator</option>
                 <option value="V69_LIVE_100_STOCK_SIM">v6.9 live 100-stock simulator</option>
                 <option value="V70_PAPER_LIVE_ACTIVE">v7.1 active quality gate</option>
@@ -3814,10 +3815,10 @@ export default function Home() {
             <button className="secondary small" onClick={loadWideTwentyBaselineBasket}>Wide 20 Baseline — 25% / 4 slots / 1% / 4%</button>
             <button className="secondary small" onClick={loadWideTwentyOpportunityBasket}>Wide 20 Opportunity — 25% / 5 slots / 1% / 5%</button>
             <button className="secondary small" onClick={loadWideFilteredBasket}>Wide Filtered 16 — 25% / 4 slots / 1% / 4%</button>
-            <button className="secondary small" onClick={loadSuperWideThirtyBasket}>Super Wide 30 — control / 25% / 4 / 1% / 4%</button>
-            <button className="secondary small" onClick={loadSuperWideFiftyBasket}>Super Wide 50 — control / 0-100% sleeve / 25% / 4 / 1% / 4%</button>
-            <button className="small" onClick={loadSuperWideHundredBasket}>Super Wide 100 — v7.1 quality gate / active-only / 25% / 4 / 1% / 4</button>
-            <button className="primary small" onClick={loadSuperWideFiveHundredBasket}>Super Wide 500 — v7.2 stress test / active-only / 25% / 4 / 1% / 4%</button>
+            <button className="secondary small" onClick={loadSuperWideThirtyBasket}>Tracked 30 — control / 25% / 4 / 1% / 4%</button>
+            <button className="secondary small" onClick={loadSuperWideFiftyBasket}>Tracked 50 — control / 0-100% sleeve / 25% / 4 / 1% / 4%</button>
+            <button className="small" onClick={loadSuperWideHundredBasket}>Tracked 100 — v7.1 quality gate / active-only / 25% / 4 / 1% / 4</button>
+            <button className="primary small" onClick={loadSuperWideFiveHundredBasket}>Tracked 500 — v7.2 stress test / active-only / 25% / 4 / 1% / 4%</button>
           </div>
           <div className="actions">
             <button className="secondary" onClick={() => void runBasketBacktester()} disabled={isBasketTesting || btDataSource === "CSV"}>{isBasketTesting ? "Running Basket..." : "Run Realistic Universal Account"}</button>
@@ -4637,7 +4638,7 @@ function TradeWindowAuditPanel({ summary, researchMode }: { summary: BasketPortf
   return (
     <div className="breakdown-card full-width">
       <h4>Paper-live readiness notes</h4>
-      <p className="muted tiny">The main benchmark is active-only. Super Wide 100 is the paper-live benchmark; Super Wide 500 is a research/cloud-readiness stress test. The 100-trade window audit remains as a stress test, but paper-live testing should focus on the Live Watchlist scanner and paper journal.</p>
+      <p className="muted tiny">The main benchmark is active-only. Tracked 100 is the paper-style benchmark; Tracked 500 is a research/cloud-readiness stress test. The 100-trade window audit remains as a stress test, but paper testing should focus on the watchlist scanner and paper journal.</p>
       <div className="mini-grid wide">
         {latest ? <>
           <StatCard label="Latest 100 total R" value={`${latest.totalR}R`} helper={latest.note} />

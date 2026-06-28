@@ -138,12 +138,12 @@ async function saveScanRun(settings: CloudBotSettings, candidates: CloudBotCandi
       reason,
       source: settings.source,
       timeframe: settings.timeframe,
-      universe_label: `${settings.symbols.length} tracked symbols · v8.6 cloud bot`,
+      universe_label: `${settings.symbols.length} tracked symbols · v8.7 cloud bot`,
       symbols_count: settings.symbols.length,
       candidates_count: candidates.length,
       actionable_count: actionableCount,
       settings: {
-        version: "v8.6",
+        version: "v8.7",
         executionMode: settings.brokerMode,
         brokerPaperEnabled: settings.brokerPaperEnabled,
         brokerLiveEnabled: settings.brokerLiveEnabled,
@@ -156,7 +156,7 @@ async function saveScanRun(settings: CloudBotSettings, candidates: CloudBotCandi
         paperOnly: settings.brokerMode !== "Alpaca Live",
         cloudWorker: true,
       },
-      notes: settings.brokerMode === "Alpaca Paper" ? "Saved by v8.6 scheduled bot. Alpaca paper broker orders may be placed only when broker paper is enabled." : settings.brokerMode === "Alpaca Live" ? "Saved by v8.6 scheduled bot. Alpaca live broker orders may be placed only when live mode is explicitly unlocked and enabled." : "Saved by v8.6 scheduled cloud bot. No broker orders placed in simulation mode.",
+      notes: settings.brokerMode === "Alpaca Paper" ? "Saved by v8.7 scheduled bot. Alpaca paper broker orders may be placed only when broker paper is enabled." : settings.brokerMode === "Alpaca Live" ? "Saved by v8.7 scheduled bot. Alpaca live broker orders may be placed only when live mode is explicitly unlocked and enabled." : "Saved by v8.7 scheduled cloud bot. No broker orders placed in simulation mode.",
     }),
   });
   const scanRunId = rows[0]?.id;
@@ -336,10 +336,10 @@ async function openPaperTrades(settings: CloudBotSettings, candidates: CloudBotC
   for (const candidate of top) {
     const size = calcPositionSizing(candidate, equity, settings);
     if (!size) continue;
-    const clientOrderId = `msg-v84-${settings.brokerMode === "Alpaca Live" ? "live" : settings.brokerMode === "Alpaca Paper" ? "paper" : "sim"}-${candidate.symbol.toLowerCase()}-${randomUUID().slice(0, 14)}`;
+    const clientOrderId = `msg-v87-${settings.brokerMode === "Alpaca Live" ? "live" : settings.brokerMode === "Alpaca Paper" ? "paper" : "sim"}-${candidate.symbol.toLowerCase()}-${randomUUID().slice(0, 14)}`;
     let brokerOrder: any = null;
     let executionMode = settings.brokerMode;
-    let notes = "Opened by v8.6 cloud bot in Supabase simulation mode. No broker order was placed.";
+    let notes = "Opened by v8.7 cloud bot in Supabase simulation mode. No broker order was placed.";
 
     const brokerOrderEnabled = (settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled) || (settings.brokerMode === "Alpaca Live" && settings.brokerLiveEnabled);
     if (brokerOrderEnabled) {
@@ -353,8 +353,8 @@ async function openPaperTrades(settings: CloudBotSettings, candidates: CloudBotC
           clientOrderId,
         });
         notes = settings.brokerMode === "Alpaca Live"
-          ? "Opened by v8.6 cloud bot using Alpaca LIVE broker bracket order. This is real-money mode and was enabled from admin/environment gates."
-          : "Opened by v8.6 cloud bot using Alpaca paper broker bracket order.";
+          ? "Opened by v8.7 cloud bot using Alpaca LIVE broker bracket order. This is real-money mode and was enabled from admin/environment gates."
+          : "Opened by v8.7 cloud bot using Alpaca paper broker bracket order.";
         await logBotEvent(settings.brokerMode === "Alpaca Live" ? "broker_live_order_submitted" : "broker_paper_order_submitted", `${candidate.symbol} ${settings.brokerMode} bracket order submitted.`, { symbol: candidate.symbol, brokerOrderId: brokerOrder.id, clientOrderId, status: brokerOrder.status });
       } catch (err) {
         const message = err instanceof Error ? err.message : "unknown broker error";
