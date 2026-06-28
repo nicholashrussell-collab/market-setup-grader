@@ -295,7 +295,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   );
 
   return (
-    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 viewer-v86 viewer-v88">
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 viewer-v86 viewer-v88 viewer-v89">
       <div className="terminal-workspace pro-app-shell">
         <aside className="viewer-sidebar" aria-label="Viewer navigation">
           <div className="sidebar-brand">
@@ -322,7 +322,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <section className="viewer-main-area page-viewer-main">
           <header className="viewer-topbar page-header-v81">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v8.8</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v8.9</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
               <h1>{activeLabel}</h1>
               <p>{activeView === "overview" ? "A professional monitoring desk for the scheduled cloud bot. The public site is view-only; the private admin page controls settings and execution." : "This page is part of the read-only viewer. Use the left navigation to move between dashboard sections without changing the bot."}</p>
             </div>

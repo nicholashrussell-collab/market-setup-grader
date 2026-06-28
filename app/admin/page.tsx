@@ -64,7 +64,7 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 100,
-  notes: "Managed from v8.8 admin. The tracked symbols list and saved settings are the source of truth for the scheduled cloud bot.",
+  notes: "Managed from v8.9 admin. The tracked symbols list and saved settings are the source of truth for the scheduled cloud bot.",
   broker_mode: "Supabase Simulation",
   broker_paper_enabled: false,
   broker_live_enabled: false,
@@ -328,7 +328,7 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 admin-v81 admin-v85 admin-v86 admin-v87 admin-v88">
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 admin-v81 admin-v85 admin-v86 admin-v87 admin-v88 admin-v89">
       <div className="terminal-workspace pro-app-shell admin-workspace admin-workspace-v86 admin-workspace-v87">
         <aside className="viewer-sidebar admin-left-rail admin-left-rail-v87" aria-label="Admin navigation">
           <div className="sidebar-brand">
@@ -359,7 +359,7 @@ export default function AdminPage() {
         <section className="viewer-main-area admin-main-v86 admin-main-v87">
           <header className="viewer-topbar page-header-v81 admin-header-v85 admin-header-v86 admin-header-v87">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v8.8</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
+              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v8.9</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
               <h1>Week-Ready Bot Control</h1>
               <p>Set what the cloud bot is allowed to do. The viewer shows what happened. Vercel Cron runs the bot in the background; your laptop does not need to stay open.</p>
             </div>
