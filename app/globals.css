@@ -2739,3 +2739,183 @@ body {
 .admin-v85 .watchlist-panel-v85 textarea { min-height: 112px; }
 .admin-v85 .execution-note { border-color: rgba(216,195,165,0.18); background: rgba(216,195,165,0.055); color: var(--exec-paper); }
 @media (max-width: 1180px) { .preflight-grid-v85, .route-mode-grid-v85 { grid-template-columns: 1fr; } .execution-command-bar-v85 { grid-template-columns: 1fr; } }
+
+/* v8.6 tracked-watchlist control room and readable rails */
+.admin-v86, .viewer-v86 {
+  --rail-left: clamp(232px, 14vw, 270px);
+  --rail-right: clamp(390px, 23vw, 470px);
+  --content-max: 1120px;
+}
+.admin-v86 .admin-workspace-v86,
+.viewer-v86 .pro-app-shell {
+  width: min(100vw - 18px, 1780px);
+  margin-inline: auto;
+  grid-template-columns: var(--rail-left) minmax(760px, var(--content-max)) var(--rail-right);
+  justify-content: center;
+  gap: 18px;
+}
+.admin-v86 .admin-main-v86,
+.viewer-v86 .page-viewer-main {
+  max-width: var(--content-max);
+  justify-self: stretch;
+  padding-inline: 0;
+}
+.admin-v86 .admin-left-rail,
+.viewer-v86 .viewer-sidebar {
+  height: calc(100vh - 24px);
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  border-radius: 20px;
+}
+.admin-v86 .admin-inspector-v86,
+.viewer-v86 .viewer-inspector {
+  width: 100%;
+  max-width: var(--rail-right);
+  height: calc(100vh - 24px);
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+  align-content: start;
+}
+.admin-v86 .admin-inspector-v86 .dash-panel,
+.viewer-v86 .viewer-inspector .dash-panel {
+  overflow: visible;
+}
+.admin-v86 .admin-header-v86 h1 {
+  font-size: clamp(2.45rem, 4.6vw, 5.2rem);
+}
+.admin-v86 .admin-top-metrics,
+.viewer-v86 .secondary-metrics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.admin-v86 .preflight-grid-v85 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.admin-v86 .preflight-card-v85 {
+  min-height: 118px;
+}
+.admin-v86 .route-mode-grid-v85 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.admin-v86 .route-mode-card-v85 {
+  min-height: 138px;
+}
+.admin-v86 .settings-grid-v86 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.admin-v86 .watchlist-panel-v86 textarea {
+  min-height: 220px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.admin-v86 .symbol-chip-list-v86 {
+  max-height: 190px;
+  scrollbar-gutter: stable;
+}
+.watchlist-actions-v86 {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0 16px;
+}
+.scroll-card-v86,
+.admin-v86 .activity-list,
+.viewer-v86 .activity-list,
+.viewer-v86 .position-list,
+.admin-v86 .position-list {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.admin-v86 .scroll-card-v86 {
+  max-height: 320px;
+}
+.admin-v86 .activity-list {
+  max-height: 360px;
+}
+.admin-v86 .rule-stack > div,
+.viewer-v86 .rule-stack > div {
+  min-height: auto;
+  overflow: visible;
+}
+.admin-v86 .rule-stack strong,
+.admin-v86 .rule-stack small,
+.viewer-v86 .rule-stack strong,
+.viewer-v86 .rule-stack small {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.viewer-v86 .topbar-rule-card strong,
+.viewer-v86 .system-snapshot-card strong {
+  white-space: normal;
+}
+.viewer-v86 .signals-table-wrap {
+  max-height: 62vh;
+}
+.viewer-v86 .clean-chart-card .chart-wrap {
+  height: min(52vh, 600px);
+  min-height: 470px;
+}
+.viewer-v86 .topbar-rule-card small {
+  line-height: 1.45;
+}
+@media (max-width: 1650px) {
+  .admin-v86, .viewer-v86 {
+    --rail-left: 230px;
+    --rail-right: 410px;
+    --content-max: 1040px;
+  }
+  .admin-v86 .admin-top-metrics,
+  .viewer-v86 .secondary-metrics,
+  .viewer-v86 .viewer-metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1350px) {
+  .admin-v86 .admin-workspace-v86,
+  .viewer-v86 .pro-app-shell {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .admin-v86 .admin-inspector-v86,
+  .viewer-v86 .viewer-inspector {
+    grid-column: 2;
+    position: static;
+    max-width: none;
+    height: auto;
+    max-height: none;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-v86 .settings-grid-v86,
+  .admin-v86 .preflight-grid-v85,
+  .admin-v86 .route-mode-grid-v85 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 920px) {
+  .admin-v86 .admin-workspace-v86,
+  .viewer-v86 .pro-app-shell {
+    grid-template-columns: 1fr;
+    width: min(100% - 16px, 100%);
+  }
+  .admin-v86 .admin-left-rail,
+  .viewer-v86 .viewer-sidebar,
+  .admin-v86 .admin-inspector-v86,
+  .viewer-v86 .viewer-inspector {
+    position: static;
+    height: auto;
+    max-height: none;
+    max-width: none;
+  }
+  .admin-v86 .admin-inspector-v86,
+  .viewer-v86 .viewer-inspector,
+  .admin-v86 .settings-grid-v86,
+  .admin-v86 .preflight-grid-v85,
+  .admin-v86 .route-mode-grid-v85,
+  .admin-v86 .admin-top-metrics,
+  .viewer-v86 .viewer-metrics-grid,
+  .viewer-v86 .secondary-metrics {
+    grid-template-columns: 1fr;
+  }
+}

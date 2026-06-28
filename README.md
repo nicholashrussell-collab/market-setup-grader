@@ -1,12 +1,18 @@
-# Market Setup Grader v8.5 — Simplified Admin Control Panel
+# Market Setup Grader v8.6
 
-v8.5 fixes the admin save JSON error, simplifies execution into three clear modes, and adds an editable watchlist area.
+Tracked-watchlist control room for the autonomous cloud bot.
 
-## Main admin flow
+## Highlights
 
-1. Preflight shows connections/gates.
-2. Execution command chooses Internal Paper, Alpaca Paper, or Alpaca Live.
-3. Additional settings control risk, scan universe, scores, stale guard, and scan limit.
-4. Tracked symbols can be viewed and optionally overridden with a custom list.
+- Removes Super Wide/Core preset controls from Admin and the public viewer.
+- The editable Tracked Symbols list is now the cloud bot watchlist.
+- Admin shows only how many symbols are active/saved, not preset names.
+- Wider, more readable right rail with scrollable panels.
+- Better 100% zoom layout so the side panels stay readable.
+- Keeps the same risk defaults and broker execution modes from v8.5.
 
-Run `supabase/schema.sql` once after deployment so `bot_control.custom_symbols` exists.
+## Deploy
+
+Copy this folder into your existing GitHub/Vercel project, commit, and push.
+
+Run `supabase/schema.sql` once if you want the database row updated to the v8.6 tracked-symbol defaults.

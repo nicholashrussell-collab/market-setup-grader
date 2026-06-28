@@ -94,7 +94,10 @@ function signalTone(row: ScanSignal): "good" | "warn" | "bad" | "neutral" {
 }
 
 function cleanUniverseLabel(label?: string) {
-  return (label || "—").replace(/ · v\d+\.\d+.*$/i, "");
+  const raw = (label || "—").replace(/ · v\d+\.\d+.*$/i, "");
+  if (/super wide|core 9/i.test(raw)) return "Historical saved scan";
+  if (/tracked symbols|tracked/i.test(raw)) return raw;
+  return raw;
 }
 
 async function fetchBars(symbol: string, timeframe: Timeframe) {
@@ -195,15 +198,15 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   const marketOpen = Boolean(bot?.market?.isOpen);
   const connected = Boolean(bot?.configured && latest?.configured !== false);
   const selectedStatus = selectedSignal ? signalStatus(selectedSignal) : "No cloud signal selected yet.";
-  const currentUniverse = bot?.settings?.universeLabel || "—";
+  const currentUniverse = "Tracked symbols";
   const currentTimeframe = bot?.settings?.timeframe || "15Min";
-  const currentScanLimit = bot?.settings?.scanLimit || bot?.settings?.symbols || 0;
+  const currentScanLimit = bot?.settings?.symbols || bot?.settings?.scanLimit || 0;
   const latestScanUniverse = cleanUniverseLabel(latestScan?.universe_label);
   const latestScanTime = latestScan?.created_at ? formatDateTime(latestScan.created_at) : "No saved scan yet";
-  const scanUniverseDiffers = Boolean(latestScan && latestScanUniverse !== "—" && currentUniverse !== "—" && latestScanUniverse !== currentUniverse);
-  const scanSourceNote = scanUniverseDiffers
-    ? `Latest saved scan used ${latestScanUniverse}; current admin rules are ${currentUniverse}. The saved scan will update after the next completed scan.`
-    : "Latest saved scan matches the current saved-scan source, or no saved scan is loaded yet.";
+  const scanUniverseDiffers = Boolean(latestScan && latestScanUniverse !== "—" && latestScanUniverse !== currentUniverse && latestScanUniverse !== "Historical saved scan");
+  const scanSourceNote = latestScan
+    ? `Latest saved scan updated ${latestScanTime}. Current admin watchlist is ${currentScanLimit} tracked symbols; older saved scans may show a historical source label until the next completed market-hours scan.`
+    : "No saved scan is loaded yet. The bot will create one after the next completed scan.";
   const activeLabel = navItems.find((item) => item.id === activeView)?.label || "Home";
 
   const metrics = (
@@ -237,7 +240,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <div><h2>Latest ranked signals</h2><p>Showing the top saved signals from the latest completed scan. This table includes its own scan timestamp so an old saved scan does not get confused with current admin settings.</p></div>
         <div className="toolbar-controls"><span className="small-pill">Top {signals.length} of {scanStats.total || signals.length}</span><select value={signalLimit} onChange={(e) => setSignalLimit(Number(e.target.value))} aria-label="Signal display limit"><option value={50}>Top 50</option><option value={100}>Top 100</option><option value={250}>Top 250</option><option value={500}>Top 500</option></select></div>
       </div>
-      <div className="scan-clarity-row"><span>Current rules: <b>{currentUniverse}</b></span><span>Latest saved scan: <b>{latestScanUniverse}</b></span><span>Scan updated: <b>{latestScanTime}</b></span><span>Scan candidates: <b>{scanStats.total}</b></span><span>Executable: <b>{scanStats.actionable}</b></span><span>Displayed: <b>{signals.length}</b></span></div>{scanUniverseDiffers ? <div className="context-callout warn-callout">{scanSourceNote}</div> : <div className="context-callout">{scanSourceNote}</div>}
+      <div className="scan-clarity-row"><span>Current watchlist: <b>{currentScanLimit} tracked</b></span><span>Saved scan source: <b>{latestScanUniverse}</b></span><span>Scan updated: <b>{latestScanTime}</b></span><span>Scan candidates: <b>{scanStats.total}</b></span><span>Executable: <b>{scanStats.actionable}</b></span><span>Displayed: <b>{signals.length}</b></span></div>{scanUniverseDiffers ? <div className="context-callout warn-callout">{scanSourceNote}</div> : <div className="context-callout">{scanSourceNote}</div>}
       <div className="table-wrap compact live-table pro-table signals-table-wrap">
         <table><thead><tr><th>Symbol</th><th>Score</th><th>Bias</th><th>Setup</th><th>R/R</th><th>Entry</th><th>Status</th></tr></thead><tbody>
           {signals.length ? signals.map((row) => (<tr key={row.id} className={`${row.symbol === selectedSymbol ? "selected-row" : ""} ${row.actionable ? "action-row" : ""}`} onClick={() => void loadChart(row.symbol)}><td><button className="text-button">{row.symbol}</button></td><td>{row.score ?? "—"}</td><td>{row.bias || "—"}</td><td>{row.setup || "—"}</td><td>{row.rr ? Number(row.rr).toFixed(2) : "—"}</td><td>{formatPrice(row.entry)}</td><td><StatusBadge tone={signalTone(row)}>{signalStatus(row)}</StatusBadge></td></tr>)) : <tr><td colSpan={7}>No cloud scan signals yet. Wait for the next cron run or run once from /admin.</td></tr>}
@@ -272,14 +275,14 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
       {error ? <div className="error-box">{error}</div> : <div className="execution-note upgraded-note">{status} Latest bot run and latest saved scan are separate. If the market is closed, cron can still run while the saved scan remains older.</div>}
       <div className="overview-grid-v81">
         {chartPanel}
-        <section className="dash-panel system-snapshot-card"><h2>System snapshot</h2><div className="rule-stack"><div><span>Mode</span><strong>Autonomous bot record bot</strong><small>Cron runs every 15 minutes; viewer is read-only.</small></div><div><span>Active rules</span><strong>{currentUniverse}</strong><small>{currentScanLimit} max symbols · {currentTimeframe} · scores {bot?.settings?.minScore ?? 80}-{bot?.settings?.maxScore ?? 89}</small></div><div><span>Risk controls</span><strong>{bot?.settings?.riskPct || 1}% per trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1} · stale guard {bot?.settings?.maxStaleMinutes || 30} min</small></div><div><span>Research basis</span><strong>Active-only pullback/reclaim</strong><small>Execution mode: {bot?.settings?.brokerMode || "Supabase Simulation"}. Broker route follows the saved admin execution mode.</small></div></div></section>
+        <section className="dash-panel system-snapshot-card"><h2>System snapshot</h2><div className="rule-stack"><div><span>Mode</span><strong>Autonomous cloud bot</strong><small>Cron runs every 15 minutes; viewer is read-only.</small></div><div><span>Active rules</span><strong>{currentScanLimit} tracked symbols</strong><small>{currentTimeframe} · scores {bot?.settings?.minScore ?? 80}-{bot?.settings?.maxScore ?? 89}</small></div><div><span>Risk controls</span><strong>{bot?.settings?.riskPct || 1}% per trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1} · stale guard {bot?.settings?.maxStaleMinutes || 30} min</small></div><div><span>Research basis</span><strong>Active-only pullback/reclaim</strong><small>Execution mode: {bot?.settings?.brokerMode || "Supabase Simulation"}. Broker route follows the saved admin execution mode.</small></div></div></section>
       </div>
       {signalsPanel}
     </section>
   );
 
   return (
-    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81">
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 viewer-v86">
       <div className="terminal-workspace pro-app-shell">
         <aside className="viewer-sidebar" aria-label="Viewer navigation">
           <div className="sidebar-brand">
@@ -302,11 +305,11 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <section className="viewer-main-area page-viewer-main">
           <header className="viewer-topbar page-header-v81">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v8.5</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v8.6</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
               <h1>{activeLabel}</h1>
-              <p>{activeView === "overview" ? "A professional monitoring desk for the scheduled bot record bot. The public site is view-only; the private admin page controls settings and execution." : "This page is part of the read-only viewer. Use the left navigation to move between dashboard sections without changing the bot."}</p>
+              <p>{activeView === "overview" ? "A professional monitoring desk for the scheduled cloud bot. The public site is view-only; the private admin page controls settings and execution." : "This page is part of the read-only viewer. Use the left navigation to move between dashboard sections without changing the bot."}</p>
             </div>
-            <div className="topbar-rule-card"><span>Current admin rules</span><strong>{currentUniverse}</strong><small>{currentScanLimit} max symbols · {currentTimeframe} · {bot?.settings?.riskPct || 1}% risk · {bot?.settings?.maxOpenPositions || 4} max open</small></div>
+            <div className="topbar-rule-card"><span>Current admin watchlist</span><strong>{currentScanLimit} tracked</strong><small>{currentTimeframe} · {bot?.settings?.riskPct || 1}% risk · {bot?.settings?.maxOpenPositions || 4} max open</small></div>
           </header>
 
           {activeView === "overview" ? overviewPanel : null}
@@ -322,8 +325,8 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
           <section className="dash-panel inspector-card system-snapshot-card compact-snapshot-v81">
             <h2>System snapshot</h2>
             <div className="rule-stack">
-              <div><span>Mode</span><strong>Autonomous bot record bot</strong><small>Cron every 15 min; viewer is read-only.</small></div>
-              <div><span>Active rules</span><strong>{currentUniverse}</strong><small>{currentScanLimit} max · {currentTimeframe}</small></div>
+              <div><span>Mode</span><strong>Autonomous cloud bot</strong><small>Cron every 15 min; viewer is read-only.</small></div>
+              <div><span>Active rules</span><strong>{currentScanLimit} tracked symbols</strong><small>{currentTimeframe}</small></div>
               <div><span>Risk</span><strong>{bot?.settings?.riskPct || 1}% per trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1}</small></div>
               <div><span>Broker bridge</span><strong>{bot?.settings?.brokerMode || "Supabase Simulation"}</strong><small>{bot?.settings?.brokerLiveEnabled ? "Alpaca Live bridge selected" : bot?.settings?.brokerPaperEnabled ? "Alpaca Paper bridge enabled" : "Broker submissions off"}</small></div>
             </div>

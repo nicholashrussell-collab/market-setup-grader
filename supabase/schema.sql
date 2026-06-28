@@ -154,7 +154,7 @@ values (
   'main',
   true,
   false,
-  'Super Wide 100',
+  'Tracked Symbols',
   '15Min',
   80,
   89,
@@ -165,8 +165,8 @@ values (
   25,
   30,
   false,
-  120,
-  'v7.7 admin/autopilot defaults. Paper execution starts disarmed.'
+  100,
+  'v8.6 tracked-symbol admin defaults. Paper execution starts disarmed.'
 )
 on conflict (id) do nothing;
 
@@ -201,4 +201,13 @@ alter table public.bot_control add column if not exists custom_symbols text;
 
 update public.bot_control
 set custom_symbols = coalesce(custom_symbols, '')
+where id = 'main';
+
+
+-- v8.6 tracked-symbol-only control panel. Safe to run multiple times.
+update public.bot_control
+set universe_label = 'Tracked Symbols',
+    scan_limit = case when scan_limit is null or scan_limit <= 0 then 100 else scan_limit end,
+    custom_symbols = case when custom_symbols is null or length(trim(custom_symbols)) = 0 then 'SPY, QQQ, IWM, DIA, XLK, XLF, XLE, XLY, XLV, XLI, PYPL, DIS, AAPL, NVDA, TSLA, MSFT, AMD, WMT, XOM, KO, JNJ, NFLX, JPM, GOOGL, AMZN, AVGO, COST, V, MA, LLY, UNH, HD, NKE, CRM, MCD, CAT, GE, META, ORCL, IBM, NOW, ADBE, INTU, PLTR, MU, QCOM, TXN, MRK, ABBV, TMO, PEP, SBUX, BA, GS, BAC, CVX, COP, C, MS, BLK, SCHW, AMAT, LRCX, KLAC, INTC, CSCO, PANW, CRWD, SNOW, SHOP, UBER, ABNB, BKNG, TGT, LOW, TJX, PG, CL, EL, MRNA, PFE, ISRG, DHR, CVS, WBA, DE, HON, UPS, FDX, GM, F, RTX, LMT, NOC, LIN, APD, FCX, SLB, OXY, T' else custom_symbols end,
+    notes = coalesce(notes, 'v8.6 admin: tracked symbols list is the cloud bot watchlist.')
 where id = 'main';
