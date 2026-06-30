@@ -196,7 +196,7 @@ function SnapshotRow({ label, value, helper, tone = "info" }: { label: string; v
 }
 
 function prettyEvent(event?: BotEvent | null) {
-  if (!event) return { title: "No bot events yet", detail: "The cloud bot will log here after cron or Run once fires." };
+  if (!event) return { title: "No bot events yet", detail: "The cloud bot will log here after cron or Run bot now fires." };
   const type = event.event_type;
   if (type === "bot_skipped_market_closed") return { title: "Skipped — market is closed", detail: event.message };
   if (type === "bot_started") return { title: "Bot started a scan", detail: event.message };
@@ -353,16 +353,16 @@ export default function AdminPage() {
 
   const paperKill = async (action: "cancel_orders" | "close_positions") => {
     const label = action === "cancel_orders" ? "cancel open Alpaca Paper orders" : "close Alpaca Paper positions";
-    if (!window.confirm(`Paper kill switch: ${label}? This affects the connected Alpaca Paper account.`)) return;
+    if (!window.confirm(`Paper cleanup: ${label}? This affects the connected Alpaca Paper account.`)) return;
     setStatus(`Running paper kill switch: ${label}...`);
     try {
       const res = await fetch("/api/admin/broker-kill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
       const data = await readApiJson(res);
-      if (!res.ok || !data.ok) throw new Error(data.message || "Paper kill switch failed.");
-      setStatus(data.message || "Paper kill switch completed.");
+      if (!res.ok || !data.ok) throw new Error(data.message || "Paper cleanup failed.");
+      setStatus(data.message || "Paper cleanup completed.");
       await loadAdminData();
     } catch (err) {
-      setStatus(err instanceof Error ? err.message : "Paper kill switch failed.");
+      setStatus(err instanceof Error ? err.message : "Paper cleanup failed.");
     }
   };
 
@@ -447,7 +447,7 @@ export default function AdminPage() {
         <section className="viewer-main-area admin-main-v86 admin-main-v87">
           <header className="viewer-topbar page-header-v81 admin-header-v85 admin-header-v86 admin-header-v87">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.2</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
+              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.2.2</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
               <h1>Paper Trading Guardrails</h1>
               <p>Set what the cloud bot is allowed to do. The viewer shows what happened. Vercel Cron runs the bot in the background; your laptop does not need to stay open.</p>
             </div>
@@ -498,11 +498,11 @@ export default function AdminPage() {
                 <small>{canTrade ? "Execution is armed. Cron may open paper trades when all gates pass." : "Execution is disarmed. Cron can scan and log, but cannot open new trades."}</small>
               </div>
               <div className="row-actions admin-primary-actions">
-                <button onClick={() => void quickSetTrading(true)} disabled={saving || canTrade}>Arm execution</button>
+                <button onClick={() => void quickSetTrading(true)} disabled={saving || canTrade}>Arm</button>
                 <button className="danger" onClick={() => void quickSetTrading(false)} disabled={saving || !control.paper_trading_enabled}>Disarm</button>
                 <button className="secondary" onClick={() => void toggleEngine()} disabled={saving}>{control.bot_enabled ? "Pause engine" : "Resume engine"}</button>
                 <button className="secondary" onClick={() => void runOnce()} disabled={running}>{running ? "Running..." : "Run once"}</button>
-                <button className="secondary" onClick={() => void saveControl()} disabled={saving}>{saving ? "Saving..." : "Save all"}</button>
+                <button className="secondary" onClick={() => void saveControl()} disabled={saving}>{saving ? "Saving..." : "Save settings"}</button>
               </div>
             </div>
             <div className="execution-note">{status}</div>
@@ -511,7 +511,7 @@ export default function AdminPage() {
           <section id="settings" className="dash-panel settings-panel-v80 settings-panel-v86 settings-panel-v87">
             <div className="panel-heading-row">
               <div><h2>Best-bot profile + guardrails</h2><p>These are the actual rules the cloud worker will use on the next run. Defaults match the 05/31 corrected best profile.</p></div>
-              <span className="small-pill">v9.2 guardrails</span>
+              <span className="small-pill">v9.2.2 labels</span>
             </div>
             <div className="settings-grid admin-settings-grid compact-settings-grid settings-grid-v86 settings-grid-v87">
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>
@@ -571,24 +571,24 @@ export default function AdminPage() {
             </div>
             <div className="execution-command-bar-v85 execution-command-bar-v87">
               <div>
-                <span>Paper kill switch</span>
+                <span>Paper cleanup</span>
                 <strong>Alpaca Paper only</strong>
-                <small>Use these only to clean up paper orders/positions while testing. Live mode remains blocked here.</small>
+                <small>Cancel orders removes waiting orders. Close positions exits actual paper holdings. Live mode remains blocked here.</small>
               </div>
               <div className="row-actions admin-primary-actions">
-                <button className="danger" onClick={() => void paperKill("cancel_orders")}>Cancel broker orders</button>
-                <button className="danger" onClick={() => void paperKill("close_positions")}>Close paper positions</button>
+                <button className="danger" onClick={() => void paperKill("cancel_orders")}>Cancel orders</button>
+                <button className="danger" onClick={() => void paperKill("close_positions")}>Close all positions</button>
               </div>
             </div>
             <div className="execution-command-bar-v85 execution-command-bar-v87">
               <div>
-                <span>Broker equity sync + reset</span>
-                <strong>Clean paper test state</strong>
-                <small>Use reconcile when Supabase app-open records do not match Alpaca positions. Start new test day archives old app records and syncs internal starting equity to the current Alpaca Paper account.</small>
+                <span>App/broker sync</span>
+                <strong>Clean test state</strong>
+                <small>Sync with broker fixes stale app-open records. Reset app archives old app records and starts from current Alpaca Paper equity.</small>
               </div>
               <div className="row-actions admin-primary-actions">
-                <button className="secondary" onClick={() => void paperReset("reconcile")}>Reconcile app records</button>
-                <button className="danger" onClick={() => void paperReset("start_new_test_day")}>Start new paper test day</button>
+                <button className="secondary" onClick={() => void paperReset("reconcile")}>Sync with broker</button>
+                <button className="danger" onClick={() => void paperReset("start_new_test_day")}>Reset app</button>
               </div>
             </div>
           </section>
