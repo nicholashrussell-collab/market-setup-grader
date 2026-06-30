@@ -63,6 +63,31 @@ export async function PATCH(req: Request) {
     "broker_paper_enabled",
     "broker_live_enabled",
     "custom_symbols",
+    "target_mode",
+    "fixed_target_r",
+    "atr_target_multiple",
+    "grade_profile",
+    "direction_filter",
+    "regime_filter",
+    "session_filter",
+    "setup_type_filter",
+    "strategy_engine",
+    "leader_exit_mode",
+    "risk_model",
+    "fixed_risk_dollars",
+    "cooldown_minutes",
+    "max_bars_to_hold",
+    "warmup_bars",
+    "max_new_trades_per_run",
+    "max_total_open_risk_pct",
+    "account_type",
+    "margin_multiplier",
+    "allow_fractional_shares",
+    "allow_shorts",
+    "open_start_minutes_et",
+    "open_end_minutes_et",
+    "no_new_trades_first_minutes",
+    "no_new_trades_last_minutes",
   ];
   for (const key of keys) {
     if (Object.prototype.hasOwnProperty.call(body, key)) allowed[key] = body[key];
@@ -76,7 +101,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true, control: rows[0] || allowed });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not save settings.";
-    const schemaHint = message.includes("broker_live_enabled") || message.includes("custom_symbols") || message.includes("column")
+    const schemaHint = message.includes("broker_live_enabled") || message.includes("custom_symbols") || message.includes("max_new_trades_per_run") || message.includes("fixed_target_r") || message.includes("column")
       ? "Run the latest supabase/schema.sql once in Supabase SQL Editor, then try saving again."
       : undefined;
     return jsonError(message, 500, schemaHint ? { schemaHint } : {});

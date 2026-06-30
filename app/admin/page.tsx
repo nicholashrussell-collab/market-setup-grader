@@ -27,10 +27,35 @@ type BotControl = {
   broker_paper_enabled?: boolean;
   broker_live_enabled?: boolean;
   custom_symbols?: string;
+  target_mode?: string;
+  fixed_target_r?: number;
+  atr_target_multiple?: number;
+  grade_profile?: string;
+  direction_filter?: string;
+  regime_filter?: string;
+  session_filter?: string;
+  setup_type_filter?: string;
+  strategy_engine?: string;
+  leader_exit_mode?: string;
+  risk_model?: string;
+  fixed_risk_dollars?: number;
+  cooldown_minutes?: number;
+  max_bars_to_hold?: number;
+  warmup_bars?: number;
+  max_new_trades_per_run?: number;
+  max_total_open_risk_pct?: number;
+  account_type?: string;
+  margin_multiplier?: number;
+  allow_fractional_shares?: boolean;
+  allow_shorts?: boolean;
+  open_start_minutes_et?: number;
+  open_end_minutes_et?: number;
+  no_new_trades_first_minutes?: number;
+  no_new_trades_last_minutes?: number;
 };
 
 type BotEvent = { id: string; created_at: string; event_type: string; message: string };
-type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string };
+type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; rr?: number; score?: number; shares?: number; risk_dollars?: number; position_value?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string; execution_mode?: string; broker_order_id?: string; broker_status?: string };
 type BrokerStatus = { configured?: boolean; mode?: string; isPaper?: boolean; isLive?: boolean; liveUnlocked?: boolean; canSubmitOrders?: boolean; realTradingLocked?: boolean; baseUrl?: string; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string; cash?: string; status?: string }; orders?: any[]; positions?: any[] };
 
 type BotStatus = {
@@ -54,8 +79,8 @@ const defaultControl: BotControl = {
   paper_trading_enabled: false,
   universe_label: "Tracked Symbols",
   timeframe: "15Min",
-  min_score: 80,
-  max_score: 89,
+  min_score: 60,
+  max_score: 100,
   min_rr: 1,
   max_open_positions: 4,
   starting_equity: 5000,
@@ -64,11 +89,36 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 100,
-  notes: "Managed from v8.9 admin. The tracked symbols list and saved settings are the source of truth for the scheduled cloud bot.",
+  notes: "Managed from v9.0 admin. Paper guardrails, best-profile settings, and the tracked-symbol list are the source of truth for the scheduled cloud bot.",
   broker_mode: "Supabase Simulation",
   broker_paper_enabled: false,
   broker_live_enabled: false,
   custom_symbols: DEFAULT_TRACKED_SYMBOLS,
+  target_mode: "FixedR",
+  fixed_target_r: 2.5,
+  atr_target_multiple: 2,
+  grade_profile: "Pullback",
+  direction_filter: "Long",
+  regime_filter: "Off",
+  session_filter: "MiddayAfternoon",
+  setup_type_filter: "AdaptiveBest",
+  strategy_engine: "UniversalAdaptiveProV3",
+  leader_exit_mode: "Fixed",
+  risk_model: "Percent",
+  fixed_risk_dollars: 50,
+  cooldown_minutes: 60,
+  max_bars_to_hold: 120,
+  warmup_bars: 200,
+  max_new_trades_per_run: 1,
+  max_total_open_risk_pct: 8,
+  account_type: "Cash",
+  margin_multiplier: 1,
+  allow_fractional_shares: true,
+  allow_shorts: false,
+  open_start_minutes_et: 690,
+  open_end_minutes_et: 960,
+  no_new_trades_first_minutes: 0,
+  no_new_trades_last_minutes: 0,
 };
 
 function money(value: number) {
@@ -294,6 +344,22 @@ export default function AdminPage() {
     }
   };
 
+
+  const paperKill = async (action: "cancel_orders" | "close_positions") => {
+    const label = action === "cancel_orders" ? "cancel open Alpaca Paper orders" : "close Alpaca Paper positions";
+    if (!window.confirm(`Paper kill switch: ${label}? This affects the connected Alpaca Paper account.`)) return;
+    setStatus(`Running paper kill switch: ${label}...`);
+    try {
+      const res = await fetch("/api/admin/broker-kill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const data = await readApiJson(res);
+      if (!res.ok || !data.ok) throw new Error(data.message || "Paper kill switch failed.");
+      setStatus(data.message || "Paper kill switch completed.");
+      await loadAdminData();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Paper kill switch failed.");
+    }
+  };
+
   const readiness = useMemo(() => [
     { title: "Cloud DB", status: bot?.configured ? "Ready" : "Needs setup", tone: bot?.configured ? "good" as Tone : "bad" as Tone, detail: bot?.configured ? "Supabase can store settings, scans, trades, and logs." : bot?.message || "Supabase is not ready." },
     { title: "Engine", status: control.bot_enabled ? "Running" : "Paused", tone: control.bot_enabled ? "good" as Tone : "warn" as Tone, detail: control.bot_enabled ? "Vercel cron may run every 15 minutes." : "Cron route is paused from admin." },
@@ -339,6 +405,7 @@ export default function AdminPage() {
             <a href="#status" className="active"><span>Status</span><small>Is it ready?</small></a>
             <a href="#command"><span>Execution</span><small>Where trades go</small></a>
             <a href="#settings"><span>Bot Settings</span><small>Risk and filters</small></a>
+            <a href="#positions"><span>Positions</span><small>Broker health</small></a>
             <a href="#watchlist"><span>Watchlist</span><small>{trackedSymbols.length} saved symbols</small></a>
             <a href="#activity"><span>Activity</span><small>Recent bot logs</small></a>
           </nav>
@@ -359,14 +426,14 @@ export default function AdminPage() {
         <section className="viewer-main-area admin-main-v86 admin-main-v87">
           <header className="viewer-topbar page-header-v81 admin-header-v85 admin-header-v86 admin-header-v87">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v8.9</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
-              <h1>Week-Ready Bot Control</h1>
+              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.0</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
+              <h1>Paper Trading Guardrails</h1>
               <p>Set what the cloud bot is allowed to do. The viewer shows what happened. Vercel Cron runs the bot in the background; your laptop does not need to stay open.</p>
             </div>
             <div className="topbar-rule-card admin-current-state-card-v87">
               <span>Current operating state</span>
               <strong>{canTrade ? `${routeLabel(selectedRoute)} armed` : `${routeLabel(selectedRoute)} disarmed`}</strong>
-              <small>{activeSymbols.length} scanned per run · {trackedSymbols.length} saved · {control.timeframe} · {control.risk_pct}% risk</small>
+              <small>{activeSymbols.length} scanned/run · {trackedSymbols.length} saved · {control.timeframe} · {control.fixed_target_r || 2.5}R target · max {control.max_new_trades_per_run || 1} new/run</small>
             </div>
           </header>
 
@@ -421,21 +488,75 @@ export default function AdminPage() {
 
           <section id="settings" className="dash-panel settings-panel-v80 settings-panel-v86 settings-panel-v87">
             <div className="panel-heading-row">
-              <div><h2>Bot settings</h2><p>These are the actual rules the cloud worker will use on the next run.</p></div>
-              <span className="small-pill">No presets</span>
+              <div><h2>Best-bot profile + guardrails</h2><p>These are the actual rules the cloud worker will use on the next run. Defaults match the 05/31 corrected best profile.</p></div>
+              <span className="small-pill">v9.0 guardrails</span>
             </div>
             <div className="settings-grid admin-settings-grid compact-settings-grid settings-grid-v86 settings-grid-v87">
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>
+              <label>Grader profile<select value={control.grade_profile || "Pullback"} onChange={(e) => update({ grade_profile: e.target.value })}><option>Pullback</option><option>Balanced</option><option>Breakout</option></select></label>
+              <label>Direction filter<select value={control.direction_filter || "Long"} onChange={(e) => update({ direction_filter: e.target.value, allow_shorts: e.target.value === "Short" || e.target.value === "All" })}><option value="Long">Long Only</option><option value="All">Long + Short</option><option value="Short">Short Only</option></select></label>
+              <label>Strategy engine<select value={control.strategy_engine || "UniversalAdaptiveProV3"} onChange={(e) => update({ strategy_engine: e.target.value })}><option>UniversalAdaptiveProV3</option><option>UniversalAdaptiveProV2</option><option>UniversalAdaptivePro</option><option>UniversalAdaptive</option><option>Manual</option></select></label>
+              <label>Regime filter<select value={control.regime_filter || "Off"} onChange={(e) => update({ regime_filter: e.target.value })}><option>Off</option><option>BlockLongBear</option><option>LongBullOnly</option><option>ShortBearOnly</option><option>LongBullShortBear</option></select></label>
+              <label>Session filter<select value={control.session_filter || "MiddayAfternoon"} onChange={(e) => update({ session_filter: e.target.value })}><option>MiddayAfternoon</option><option>RegularHours</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>All</option></select></label>
+              <label>Setup type<select value={control.setup_type_filter || "AdaptiveBest"} onChange={(e) => update({ setup_type_filter: e.target.value })}><option>AdaptiveBest</option><option>Pullback</option><option>Continuation</option><option>ContinuationPullback</option><option>ExcludeBreakoutChase</option><option>All</option></select></label>
               <label>Scan limit<input type="number" value={control.scan_limit} onChange={(e) => update({ scan_limit: Number(e.target.value) || 100 })} /></label>
-              <label>Starting / tracked equity<input type="number" value={control.starting_equity} onChange={(e) => update({ starting_equity: Number(e.target.value) || 5000 })} /></label>
+              <label>Min score<input type="number" value={control.min_score} onChange={(e) => update({ min_score: Number(e.target.value) || 60 })} /></label>
+              <label>Max score<input type="number" value={control.max_score} onChange={(e) => update({ max_score: Number(e.target.value) || 100 })} /></label>
+              <label>Min R/R<input type="number" step="0.1" value={control.min_rr} onChange={(e) => update({ min_rr: Number(e.target.value) || 1 })} /></label>
+              <label>Target mode<select value={control.target_mode || "FixedR"} onChange={(e) => update({ target_mode: e.target.value })}><option>FixedR</option><option>Structure</option><option>ATR</option></select></label>
+              <label>Fixed target R<input type="number" step="0.1" value={control.fixed_target_r ?? 2.5} onChange={(e) => update({ fixed_target_r: Number(e.target.value) || 2.5 })} /></label>
+              <label>Leader exit mode<select value={control.leader_exit_mode || "Fixed"} onChange={(e) => update({ leader_exit_mode: e.target.value })}><option>Fixed</option><option>Expanded</option><option>PartialRunner</option></select></label>
+              <label>Risk model<select value={control.risk_model || "Percent"} onChange={(e) => update({ risk_model: e.target.value })}><option>Percent</option><option>Fixed</option></select></label>
               <label>Risk per trade %<input type="number" step="0.1" value={control.risk_pct} onChange={(e) => update({ risk_pct: Number(e.target.value) || 1 })} /></label>
+              <label>Fixed risk $<input type="number" value={control.fixed_risk_dollars ?? 50} onChange={(e) => update({ fixed_risk_dollars: Number(e.target.value) || 50 })} /></label>
               <label>Max position %<input type="number" step="1" value={control.max_position_pct} onChange={(e) => update({ max_position_pct: Number(e.target.value) || 25 })} /></label>
               <label>Max open trades<input type="number" value={control.max_open_positions} onChange={(e) => update({ max_open_positions: Number(e.target.value) || 4 })} /></label>
-              <label>Min score<input type="number" value={control.min_score} onChange={(e) => update({ min_score: Number(e.target.value) || 80 })} /></label>
-              <label>Max score<input type="number" value={control.max_score} onChange={(e) => update({ max_score: Number(e.target.value) || 89 })} /></label>
-              <label>Min R/R<input type="number" step="0.1" value={control.min_rr} onChange={(e) => update({ min_rr: Number(e.target.value) || 1 })} /></label>
+              <label>Max new trades/run<input type="number" value={control.max_new_trades_per_run ?? 1} onChange={(e) => update({ max_new_trades_per_run: Number(e.target.value) || 1 })} /></label>
+              <label>Max total open risk %<input type="number" step="0.5" value={control.max_total_open_risk_pct ?? 8} onChange={(e) => update({ max_total_open_risk_pct: Number(e.target.value) || 8 })} /></label>
+              <label>Cooldown minutes<input type="number" value={control.cooldown_minutes ?? 60} onChange={(e) => update({ cooldown_minutes: Number(e.target.value) || 60 })} /></label>
+              <label>Max bars to hold<input type="number" value={control.max_bars_to_hold ?? 120} onChange={(e) => update({ max_bars_to_hold: Number(e.target.value) || 120 })} /></label>
+              <label>Warmup bars<input type="number" value={control.warmup_bars ?? 200} onChange={(e) => update({ warmup_bars: Number(e.target.value) || 200 })} /></label>
+              <label>Starting / tracked equity<input type="number" value={control.starting_equity} onChange={(e) => update({ starting_equity: Number(e.target.value) || 5000 })} /></label>
+              <label>Account type<select value={control.account_type || "Cash"} onChange={(e) => update({ account_type: e.target.value, margin_multiplier: e.target.value === "Cash" ? 1 : control.margin_multiplier })}><option>Cash</option><option>Margin</option></select></label>
+              <label>Buying power multiple<input type="number" step="0.5" value={control.margin_multiplier ?? 1} onChange={(e) => update({ margin_multiplier: Number(e.target.value) || 1 })} /></label>
+              <label>Fractional shares<select value={control.allow_fractional_shares ? "yes" : "no"} onChange={(e) => update({ allow_fractional_shares: e.target.value === "yes" })}><option value="yes">Yes</option><option value="no">No, whole shares only</option></select></label>
+              <label>Shorts<select value={control.allow_shorts ? "yes" : "no"} onChange={(e) => update({ allow_shorts: e.target.value === "yes", direction_filter: e.target.value === "yes" ? control.direction_filter : "Long" })}><option value="no">Blocked</option><option value="yes">Allowed</option></select></label>
+              <label>Entry start ET<input type="number" value={control.open_start_minutes_et ?? 690} onChange={(e) => update({ open_start_minutes_et: Number(e.target.value) || 690 })} /></label>
+              <label>Entry end ET<input type="number" value={control.open_end_minutes_et ?? 960} onChange={(e) => update({ open_end_minutes_et: Number(e.target.value) || 960 })} /></label>
               <label>Max stale minutes<input type="number" value={control.max_stale_minutes} onChange={(e) => update({ max_stale_minutes: Number(e.target.value) || 30 })} /></label>
               <label>Stale simulation<select value={control.allow_stale_simulation ? "on" : "off"} onChange={(e) => update({ allow_stale_simulation: e.target.value === "on" })}><option value="off">OFF: block stale candles</option><option value="on">ON: paper test only</option></select></label>
+            </div>
+          </section>
+
+          <section id="positions" className="dash-panel settings-panel-v80 settings-panel-v86 settings-panel-v87">
+            <div className="panel-heading-row">
+              <div><h2>Position manager</h2><p>Readable view of app-open trades and broker health. This is the paper-trading safety panel.</p></div>
+              <span className="small-pill">{openTrades.length} open records</span>
+            </div>
+            <div className="watchlist-summary-v87">
+              <div><strong>{openTrades.length}</strong><span>app-open trades</span></div>
+              <div><strong>{bot?.broker?.positions?.length ?? 0}</strong><span>broker positions</span></div>
+              <div><strong>{bot?.broker?.orders?.length ?? 0}</strong><span>open broker orders</span></div>
+            </div>
+            <div className="activity-list timeline-list scroll-card-v86 scroll-card-v87">
+              {openTrades.length ? openTrades.map((trade) => (
+                <div key={trade.id}>
+                  <b>{trade.symbol} · {trade.bias} · {trade.status}</b>
+                  <span>Entry {trade.entry ?? "—"} · Stop {trade.stop ?? "—"} · Target {trade.target ?? "—"} · Qty {trade.shares ?? "—"}</span>
+                  <small>Risk {trade.risk_dollars ? money(Number(trade.risk_dollars)) : "—"} · Open P/L {money(Number(trade.unrealized_pnl || 0))} · {trade.execution_mode || "app"}</small>
+                </div>
+              )) : <p className="muted">No open app trade records.</p>}
+            </div>
+            <div className="execution-command-bar-v85 execution-command-bar-v87">
+              <div>
+                <span>Paper kill switch</span>
+                <strong>Alpaca Paper only</strong>
+                <small>Use these only to clean up paper orders/positions while testing. Live mode remains blocked here.</small>
+              </div>
+              <div className="row-actions admin-primary-actions">
+                <button className="danger" onClick={() => void paperKill("cancel_orders")}>Cancel broker orders</button>
+                <button className="danger" onClick={() => void paperKill("close_positions")}>Close paper positions</button>
+              </div>
             </div>
           </section>
 

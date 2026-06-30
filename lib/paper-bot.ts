@@ -1,6 +1,12 @@
 import { randomUUID } from "crypto";
 import { fetchAlpacaBars } from "@/lib/alpaca-server";
-import { getAlpacaBrokerAccount, getAlpacaBrokerOrders, getAlpacaBrokerPositions, getBrokerConfigStatus, submitAlpacaBrokerBracketOrder } from "@/lib/alpaca-trading";
+import {
+  getAlpacaBrokerAccount,
+  getAlpacaBrokerOrders,
+  getAlpacaBrokerPositions,
+  getBrokerConfigStatus,
+  submitAlpacaBrokerBracketOrder,
+} from "@/lib/alpaca-trading";
 import { CloudBotSettings, getRuntimeCloudBotSettings } from "@/lib/bot-config";
 import { supabaseRest } from "@/lib/supabase-rest";
 import { Bias, Candle, GradeResult, gradeSetup } from "@/lib/trading";
@@ -70,7 +76,11 @@ function nowEtParts(date = new Date()) {
     hour12: false,
   }).formatToParts(date);
   const get = (type: string) => parts.find((p) => p.type === type)?.value || "";
-  return { weekday: get("weekday"), hour: Number(get("hour")), minute: Number(get("minute")) };
+  return {
+    weekday: get("weekday"),
+    hour: Number(get("hour")),
+    minute: Number(get("minute")),
+  };
 }
 
 export function getSimpleMarketStatus(date = new Date()) {
@@ -81,11 +91,47 @@ export function getSimpleMarketStatus(date = new Date()) {
   return {
     isOpen,
     label: isOpen ? "Open" : "Closed",
-    reason: isOpen ? "Regular session appears open." : "Outside regular US market hours. Holiday checks are not included in this simple guard.",
+    reason: isOpen
+      ? "Regular session appears open."
+      : "Outside regular US market hours. Holiday checks are not included in this simple guard.",
   };
 }
 
-async function logBotEvent(event_type: string, message: string, payload: Record<string, unknown> = {}) {
+function getBotEntrySessionStatus(
+  settings: CloudBotSettings,
+  date = new Date(),
+) {
+  const { weekday, hour, minute } = nowEtParts(date);
+  const weekdayOpen = !["Sat", "Sun"].includes(weekday);
+  const minutes = hour * 60 + minute;
+  const start = Math.max(
+    9 * 60 + 30,
+    settings.openStartMinutesEt + settings.noNewTradesFirstMinutes,
+  );
+  const end = Math.min(
+    16 * 60,
+    settings.openEndMinutesEt - settings.noNewTradesLastMinutes,
+  );
+  const allowed = weekdayOpen && minutes >= start && minutes <= end;
+  const fmt = (m: number) =>
+    `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")} ET`;
+  return {
+    allowed,
+    minutes,
+    start,
+    end,
+    label: allowed ? "Entries allowed" : "Entries blocked",
+    reason: allowed
+      ? `Inside bot entry window ${fmt(start)}-${fmt(end)}.`
+      : `Outside bot entry window ${fmt(start)}-${fmt(end)}. Scanner may log, but new entries are blocked.`,
+  };
+}
+
+async function logBotEvent(
+  event_type: string,
+  message: string,
+  payload: Record<string, unknown> = {},
+) {
   try {
     await supabaseRest("bot_events", {
       method: "POST",
@@ -97,14 +143,41 @@ async function logBotEvent(event_type: string, message: string, payload: Record<
   }
 }
 
-function makeCandidate(symbol: string, candles: Candle[], g: GradeResult, settings: CloudBotSettings): CloudBotCandidate {
-  const latestTime = candles[candles.length - 1]?.time || g.latestCandleTime || "";
-  const staleMinutes = latestTime ? Math.max(0, Math.round((Date.now() - new Date(latestTime).getTime()) / 60000)) : 999999;
+function makeCandidate(
+  symbol: string,
+  candles: Candle[],
+  g: GradeResult,
+  settings: CloudBotSettings,
+): CloudBotCandidate {
+  const latestTime =
+    candles[candles.length - 1]?.time || g.latestCandleTime || "";
+  const staleMinutes = latestTime
+    ? Math.max(
+        0,
+        Math.round((Date.now() - new Date(latestTime).getTime()) / 60000),
+      )
+    : 999999;
   const rr = Number.isFinite(g.rr) ? g.rr : 0;
-  const freshEnough = settings.allowStaleSimulation || staleMinutes <= settings.maxStaleMinutes;
-  const directionAllowed = !settings.longOnly || g.bias !== "Short";
-  const actionable = g.bias !== "Neutral" && directionAllowed && g.score >= settings.minScore && g.score <= settings.maxScore && rr >= settings.minRR && freshEnough;
-  const priority = (actionable ? 1000 : 0) + g.score * 10 + rr - Math.min(staleMinutes, 500) / 100;
+  const freshEnough =
+    settings.allowStaleSimulation || staleMinutes <= settings.maxStaleMinutes;
+  const directionAllowed =
+    settings.directionFilter === "All" ||
+    (settings.directionFilter === "Long" && g.bias === "Long") ||
+    (settings.directionFilter === "Short" && g.bias === "Short");
+  const shortsAllowed = g.bias !== "Short" || settings.allowShorts;
+  const actionable =
+    g.bias !== "Neutral" &&
+    directionAllowed &&
+    shortsAllowed &&
+    g.score >= settings.minScore &&
+    g.score <= settings.maxScore &&
+    rr >= settings.minRR &&
+    freshEnough;
+  const priority =
+    (actionable ? 1000 : 0) +
+    g.score * 10 +
+    rr -
+    Math.min(staleMinutes, 500) / 100;
   return {
     symbol,
     score: g.score,
@@ -126,7 +199,13 @@ function makeCandidate(symbol: string, candles: Candle[], g: GradeResult, settin
   };
 }
 
-async function saveScanRun(settings: CloudBotSettings, candidates: CloudBotCandidate[], startedAt: string, finishedAt: string, reason: string) {
+async function saveScanRun(
+  settings: CloudBotSettings,
+  candidates: CloudBotCandidate[],
+  startedAt: string,
+  finishedAt: string,
+  reason: string,
+) {
   const actionableCount = candidates.filter((c) => c.actionable).length;
   const rows = await supabaseRest<{ id: string }[]>("scan_runs", {
     method: "POST",
@@ -138,12 +217,12 @@ async function saveScanRun(settings: CloudBotSettings, candidates: CloudBotCandi
       reason,
       source: settings.source,
       timeframe: settings.timeframe,
-      universe_label: `${settings.symbols.length} tracked symbols · v8.9 cloud bot`,
+      universe_label: `${settings.symbols.length} tracked symbols · v9.0 cloud bot`,
       symbols_count: settings.symbols.length,
       candidates_count: candidates.length,
       actionable_count: actionableCount,
       settings: {
-        version: "v8.9",
+        version: "v9.0",
         executionMode: settings.brokerMode,
         brokerPaperEnabled: settings.brokerPaperEnabled,
         brokerLiveEnabled: settings.brokerLiveEnabled,
@@ -153,10 +232,28 @@ async function saveScanRun(settings: CloudBotSettings, candidates: CloudBotCandi
         maxOpenPositions: settings.maxOpenPositions,
         riskPct: settings.riskPct,
         maxPositionPct: settings.maxPositionPct,
+        targetMode: settings.targetMode,
+        fixedTargetR: settings.fixedTargetR,
+        gradeProfile: settings.gradeProfile,
+        directionFilter: settings.directionFilter,
+        strategyEngine: settings.strategyEngine,
+        maxNewTradesPerRun: settings.maxNewTradesPerRun,
+        cooldownMinutes: settings.cooldownMinutes,
+        maxTotalOpenRiskPct: settings.maxTotalOpenRiskPct,
+        sessionFilter: settings.sessionFilter,
+        entryWindowEt: {
+          start: settings.openStartMinutesEt,
+          end: settings.openEndMinutesEt,
+        },
         paperOnly: settings.brokerMode !== "Alpaca Live",
         cloudWorker: true,
       },
-      notes: settings.brokerMode === "Alpaca Paper" ? "Saved by v8.9 scheduled bot. Alpaca paper broker orders may be placed only when broker paper is enabled." : settings.brokerMode === "Alpaca Live" ? "Saved by v8.9 scheduled bot. Alpaca live broker orders may be placed only when live mode is explicitly unlocked and enabled." : "Saved by v8.9 scheduled cloud bot. No broker orders placed in simulation mode.",
+      notes:
+        settings.brokerMode === "Alpaca Paper"
+          ? "Saved by v9.0 scheduled bot. Alpaca paper broker orders may be placed only when broker paper is enabled."
+          : settings.brokerMode === "Alpaca Live"
+            ? "Saved by v9.0 scheduled bot. Alpaca live broker orders may be placed only when live mode is explicitly unlocked and enabled."
+            : "Saved by v9.0 scheduled cloud bot. No broker orders placed in simulation mode.",
     }),
   });
   const scanRunId = rows[0]?.id;
@@ -165,58 +262,106 @@ async function saveScanRun(settings: CloudBotSettings, candidates: CloudBotCandi
     await supabaseRest("scan_signals", {
       method: "POST",
       headers: { Prefer: "return=minimal" },
-      body: JSON.stringify(candidates.map((c) => ({
-        scan_run_id: scanRunId,
-        symbol: c.symbol,
-        score: c.score,
-        bias: c.bias,
-        setup: c.setup,
-        regime: c.regime,
-        market_state: c.state,
-        rr: c.rr,
-        entry: c.entry,
-        stop: c.stop,
-        target: c.target,
-        latest_time: c.latestTime || null,
-        stale_minutes: c.staleMinutes,
-        actionable: c.actionable,
-        priority: c.priority,
-        reasons: c.reasons,
-        warnings: c.warnings,
-        raw: c,
-      }))),
+      body: JSON.stringify(
+        candidates.map((c) => ({
+          scan_run_id: scanRunId,
+          symbol: c.symbol,
+          score: c.score,
+          bias: c.bias,
+          setup: c.setup,
+          regime: c.regime,
+          market_state: c.state,
+          rr: c.rr,
+          entry: c.entry,
+          stop: c.stop,
+          target: c.target,
+          latest_time: c.latestTime || null,
+          stale_minutes: c.staleMinutes,
+          actionable: c.actionable,
+          priority: c.priority,
+          reasons: c.reasons,
+          warnings: c.warnings,
+          raw: c,
+        })),
+      ),
     });
   }
   return scanRunId;
 }
 
-function calcPositionSizing(candidate: CloudBotCandidate, equity: number, settings: CloudBotSettings) {
+function calcPositionSizing(
+  candidate: CloudBotCandidate,
+  equity: number,
+  settings: CloudBotSettings,
+) {
   const riskPerShare = Math.abs(candidate.entry - candidate.stop);
   if (!Number.isFinite(riskPerShare) || riskPerShare <= 0) return null;
-  const targetRisk = equity * (settings.riskPct / 100);
-  const maxPositionValue = equity * (settings.maxPositionPct / 100);
-  const shares = Math.max(0, Math.min(targetRisk / riskPerShare, maxPositionValue / Math.max(candidate.entry, 0.01)));
+  const targetRisk =
+    settings.riskModel === "Fixed"
+      ? settings.fixedRiskDollars
+      : equity * (settings.riskPct / 100);
+  const maxBuyingPower =
+    settings.accountType === "Margin"
+      ? equity * Math.max(settings.marginMultiplier, 1)
+      : equity;
+  const maxPositionValue = Math.min(
+    maxBuyingPower,
+    equity * (settings.maxPositionPct / 100),
+  );
+  const rawShares = Math.max(
+    0,
+    Math.min(
+      targetRisk / riskPerShare,
+      maxPositionValue / Math.max(candidate.entry, 0.01),
+    ),
+  );
+  const shares = settings.allowFractionalShares
+    ? rawShares
+    : Math.floor(rawShares);
   if (!Number.isFinite(shares) || shares <= 0) return null;
   return {
-    shares: Number(shares.toFixed(4)),
+    shares: Number(shares.toFixed(settings.allowFractionalShares ? 4 : 0)),
     riskDollars: Number((riskPerShare * shares).toFixed(2)),
     positionValue: Number((candidate.entry * shares).toFixed(2)),
   };
 }
 
 async function getOpenPaperTrades(): Promise<PaperTradeRow[]> {
-  return await supabaseRest<PaperTradeRow[]>("paper_trades?status=eq.Open&select=*", { method: "GET" });
+  return await supabaseRest<PaperTradeRow[]>(
+    "paper_trades?status=eq.Open&select=*",
+    { method: "GET" },
+  );
 }
 
 async function syncBrokerState(settings: CloudBotSettings) {
-  const brokerEnabled = (settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled) || (settings.brokerMode === "Alpaca Live" && settings.brokerLiveEnabled);
+  const brokerEnabled =
+    (settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled) ||
+    (settings.brokerMode === "Alpaca Live" && settings.brokerLiveEnabled);
   if (!brokerEnabled) {
-    return { enabled: false, mode: settings.brokerMode, account: null, orders: [], positions: [] };
+    return {
+      enabled: false,
+      mode: settings.brokerMode,
+      account: null,
+      orders: [],
+      positions: [],
+    };
   }
   const brokerConfig = getBrokerConfigStatus(settings.brokerMode);
   if (!brokerConfig.canSubmitOrders) {
-    await logBotEvent("broker_sync_blocked", `${settings.brokerMode} broker sync blocked: ${brokerConfig.message}`, { brokerConfig });
-    return { enabled: true, mode: settings.brokerMode, account: null, orders: [], positions: [], blocked: true, brokerConfig };
+    await logBotEvent(
+      "broker_sync_blocked",
+      `${settings.brokerMode} broker sync blocked: ${brokerConfig.message}`,
+      { brokerConfig },
+    );
+    return {
+      enabled: true,
+      mode: settings.brokerMode,
+      account: null,
+      orders: [],
+      positions: [],
+      blocked: true,
+      brokerConfig,
+    };
   }
   try {
     const [account, orders, positions] = await Promise.all([
@@ -224,20 +369,51 @@ async function syncBrokerState(settings: CloudBotSettings) {
       getAlpacaBrokerOrders(settings.brokerMode, "open", 50),
       getAlpacaBrokerPositions(settings.brokerMode),
     ]);
-    await logBotEvent("broker_sync", `${settings.brokerMode} synced: ${positions.length} position(s), ${orders.length} open order(s).`, {
+    await logBotEvent(
+      "broker_sync",
+      `${settings.brokerMode} synced: ${positions.length} position(s), ${orders.length} open order(s).`,
+      {
+        mode: settings.brokerMode,
+        buyingPower: account.buying_power,
+        portfolioValue: account.portfolio_value,
+        positions: positions.map((p) => ({
+          symbol: p.symbol,
+          qty: p.qty,
+          side: p.side,
+          unrealized_pl: p.unrealized_pl,
+        })),
+        orders: orders.map((o) => ({
+          id: o.id,
+          symbol: o.symbol,
+          status: o.status,
+          side: o.side,
+          client_order_id: o.client_order_id,
+        })),
+      },
+    );
+    return {
+      enabled: true,
       mode: settings.brokerMode,
-      buyingPower: account.buying_power,
-      portfolioValue: account.portfolio_value,
-      positions: positions.map((p) => ({ symbol: p.symbol, qty: p.qty, side: p.side, unrealized_pl: p.unrealized_pl })),
-      orders: orders.map((o) => ({ id: o.id, symbol: o.symbol, status: o.status, side: o.side, client_order_id: o.client_order_id })),
-    });
-    return { enabled: true, mode: settings.brokerMode, account, orders, positions, brokerConfig };
+      account,
+      orders,
+      positions,
+      brokerConfig,
+    };
   } catch (err) {
-    await logBotEvent("broker_sync_error", `${settings.brokerMode} broker sync failed: ${err instanceof Error ? err.message : "unknown error"}`, { mode: settings.brokerMode });
-    return { enabled: true, mode: settings.brokerMode, account: null, orders: [], positions: [] };
+    await logBotEvent(
+      "broker_sync_error",
+      `${settings.brokerMode} broker sync failed: ${err instanceof Error ? err.message : "unknown error"}`,
+      { mode: settings.brokerMode },
+    );
+    return {
+      enabled: true,
+      mode: settings.brokerMode,
+      account: null,
+      orders: [],
+      positions: [],
+    };
   }
 }
-
 
 async function checkOpenTrades(settings: CloudBotSettings) {
   const open = await getOpenPaperTrades();
@@ -245,12 +421,19 @@ async function checkOpenTrades(settings: CloudBotSettings) {
   let closed = 0;
   for (const trade of open) {
     try {
-      const candles = await fetchAlpacaBars({ symbol: trade.symbol, timeframe: settings.timeframe, mode: "latest", limit: 250 });
+      const candles = await fetchAlpacaBars({
+        symbol: trade.symbol,
+        timeframe: settings.timeframe,
+        mode: "latest",
+        limit: 250,
+      });
       const latest = latestPrice(candles);
       const shares = safeNumber(trade.shares ?? trade.raw?.shares, 0);
       const entry = safeNumber(trade.entry, 0);
       const direction = trade.bias === "Short" ? -1 : 1;
-      const brokerManaged = trade.execution_mode === "Alpaca Paper" || trade.execution_mode === "Alpaca Live";
+      const brokerManaged =
+        trade.execution_mode === "Alpaca Paper" ||
+        trade.execution_mode === "Alpaca Live";
       if (brokerManaged) {
         const unrealized = (latest - entry) * shares * direction;
         await supabaseRest(`paper_trades?id=eq.${trade.id}`, {
@@ -260,7 +443,9 @@ async function checkOpenTrades(settings: CloudBotSettings) {
             updated_at: new Date().toISOString(),
             last_price: latest,
             unrealized_pnl: Number(unrealized.toFixed(2)),
-            notes: trade.notes || `${trade.execution_mode} broker-managed bracket order. Supabase is tracking the audit record.`,
+            notes:
+              trade.notes ||
+              `${trade.execution_mode} broker-managed bracket order. Supabase is tracking the audit record.`,
           }),
         });
         updated += 1;
@@ -269,20 +454,46 @@ async function checkOpenTrades(settings: CloudBotSettings) {
       let closePrice = 0;
       let closeReason = "";
       let closedAt = "";
-      const signalTime = trade.signal_time ? new Date(trade.signal_time).getTime() : 0;
+      const signalTime = trade.signal_time
+        ? new Date(trade.signal_time).getTime()
+        : 0;
       for (const candle of candles) {
-        if (signalTime && new Date(candle.time).getTime() < signalTime) continue;
+        if (signalTime && new Date(candle.time).getTime() < signalTime)
+          continue;
         if (trade.bias === "Short") {
-          if (candle.high >= trade.stop) { closePrice = trade.stop; closeReason = "Stop hit"; closedAt = candle.time; break; }
-          if (candle.low <= trade.target) { closePrice = trade.target; closeReason = "Target hit"; closedAt = candle.time; break; }
+          if (candle.high >= trade.stop) {
+            closePrice = trade.stop;
+            closeReason = "Stop hit";
+            closedAt = candle.time;
+            break;
+          }
+          if (candle.low <= trade.target) {
+            closePrice = trade.target;
+            closeReason = "Target hit";
+            closedAt = candle.time;
+            break;
+          }
         } else {
-          if (candle.low <= trade.stop) { closePrice = trade.stop; closeReason = "Stop hit"; closedAt = candle.time; break; }
-          if (candle.high >= trade.target) { closePrice = trade.target; closeReason = "Target hit"; closedAt = candle.time; break; }
+          if (candle.low <= trade.stop) {
+            closePrice = trade.stop;
+            closeReason = "Stop hit";
+            closedAt = candle.time;
+            break;
+          }
+          if (candle.high >= trade.target) {
+            closePrice = trade.target;
+            closeReason = "Target hit";
+            closedAt = candle.time;
+            break;
+          }
         }
       }
       if (closePrice) {
         const realized = (closePrice - entry) * shares * direction;
-        const riskDollars = safeNumber(trade.risk_dollars ?? trade.raw?.riskDollars, Math.abs(entry - trade.stop) * Math.max(shares, 1));
+        const riskDollars = safeNumber(
+          trade.risk_dollars ?? trade.raw?.riskDollars,
+          Math.abs(entry - trade.stop) * Math.max(shares, 1),
+        );
         await supabaseRest(`paper_trades?id=eq.${trade.id}`, {
           method: "PATCH",
           headers: { Prefer: "return=minimal" },
@@ -292,14 +503,20 @@ async function checkOpenTrades(settings: CloudBotSettings) {
             close_time: closedAt || new Date().toISOString(),
             close_price: closePrice,
             result_dollars: Number(realized.toFixed(2)),
-            result_r: Number((realized / Math.max(riskDollars, 0.01)).toFixed(2)),
+            result_r: Number(
+              (realized / Math.max(riskDollars, 0.01)).toFixed(2),
+            ),
             last_price: closePrice,
             unrealized_pnl: 0,
             notes: closeReason,
           }),
         });
         closed += 1;
-        await logBotEvent("paper_trade_closed", `${trade.symbol} paper trade closed: ${closeReason}.`, { tradeId: trade.id, closePrice, closeReason });
+        await logBotEvent(
+          "paper_trade_closed",
+          `${trade.symbol} paper trade closed: ${closeReason}.`,
+          { tradeId: trade.id, closePrice, closeReason },
+        );
       } else {
         const unrealized = (latest - entry) * shares * direction;
         await supabaseRest(`paper_trades?id=eq.${trade.id}`, {
@@ -314,52 +531,169 @@ async function checkOpenTrades(settings: CloudBotSettings) {
         updated += 1;
       }
     } catch (err) {
-      await logBotEvent("paper_trade_check_error", `Could not check ${trade.symbol}: ${err instanceof Error ? err.message : "unknown error"}`, { tradeId: trade.id });
+      await logBotEvent(
+        "paper_trade_check_error",
+        `Could not check ${trade.symbol}: ${err instanceof Error ? err.message : "unknown error"}`,
+        { tradeId: trade.id },
+      );
     }
   }
   return { openChecked: open.length, updated, closed };
 }
 
-async function openPaperTrades(settings: CloudBotSettings, candidates: CloudBotCandidate[]) {
-  if (!settings.paperTradingEnabled) return { opened: 0, symbols: [] as string[], reason: "Paper trading disabled." };
+async function getRecentTradesSince(minutes: number): Promise<PaperTradeRow[]> {
+  if (!Number.isFinite(minutes) || minutes <= 0) return [];
+  const since = new Date(Date.now() - minutes * 60_000).toISOString();
+  return await supabaseRest<PaperTradeRow[]>(
+    `paper_trades?created_at=gte.${encodeURIComponent(since)}&select=*&order=created_at.desc&limit=25`,
+    { method: "GET" },
+  ).catch(() => []);
+}
+
+async function openPaperTrades(
+  settings: CloudBotSettings,
+  candidates: CloudBotCandidate[],
+) {
+  if (!settings.paperTradingEnabled)
+    return {
+      opened: 0,
+      symbols: [] as string[],
+      reason: "Paper trading disabled.",
+    };
+  const entrySession = getBotEntrySessionStatus(settings);
+  if (!entrySession.allowed && !settings.allowStaleSimulation) {
+    await logBotEvent("entries_blocked_session", entrySession.reason, {
+      entrySession,
+    });
+    return { opened: 0, symbols: [] as string[], reason: entrySession.reason };
+  }
+
   const open = await getOpenPaperTrades();
   const openSymbols = new Set(open.map((p) => p.symbol));
-  const slots = Math.max(0, settings.maxOpenPositions - open.length);
-  if (!slots) return { opened: 0, symbols: [] as string[], reason: "No open paper slots available." };
-  const realizedClosed = await supabaseRest<{ result_dollars: number | null }[]>("paper_trades?status=eq.Closed&select=result_dollars", { method: "GET" }).catch(() => []);
-  const realized = realizedClosed.reduce((sum, p) => sum + safeNumber(p.result_dollars), 0);
-  const equity = settings.startingEquity + realized;
-  const top = candidates.filter((c) => c.actionable && (c.bias === "Long" || c.bias === "Short") && !openSymbols.has(c.symbol)).slice(0, slots);
+  const realizedClosed = await supabaseRest<
+    { result_dollars: number | null }[]
+  >("paper_trades?status=eq.Closed&select=result_dollars", {
+    method: "GET",
+  }).catch(() => []);
+  const realized = realizedClosed.reduce(
+    (sum, p) => sum + safeNumber(p.result_dollars),
+    0,
+  );
+  const equity = Math.max(1, settings.startingEquity + realized);
+  const currentOpenRisk = open.reduce(
+    (sum, p) => sum + safeNumber(p.risk_dollars ?? p.raw?.riskDollars, 0),
+    0,
+  );
+  const maxTotalOpenRiskDollars = equity * (settings.maxTotalOpenRiskPct / 100);
+  if (currentOpenRisk >= maxTotalOpenRiskDollars) {
+    return {
+      opened: 0,
+      symbols: [] as string[],
+      reason: `Open risk cap reached: ${currentOpenRisk.toFixed(2)} / ${maxTotalOpenRiskDollars.toFixed(2)}.`,
+    };
+  }
+
+  const recentTrades = await getRecentTradesSince(settings.cooldownMinutes);
+  if (recentTrades.length) {
+    return {
+      opened: 0,
+      symbols: [] as string[],
+      reason: `Cooldown guard active: ${recentTrades.length} trade(s) created inside ${settings.cooldownMinutes} minutes.`,
+    };
+  }
+
+  const slots = Math.max(
+    0,
+    Math.min(
+      settings.maxOpenPositions - open.length,
+      settings.maxNewTradesPerRun,
+    ),
+  );
+  if (!slots)
+    return {
+      opened: 0,
+      symbols: [] as string[],
+      reason: "No open paper slots available or max-new-trades-per-run is 0.",
+    };
+  const top = candidates
+    .filter(
+      (c) =>
+        c.actionable &&
+        (c.bias === "Long" || c.bias === "Short") &&
+        !openSymbols.has(c.symbol),
+    )
+    .slice(0, slots);
   const rows: any[] = [];
   const brokerErrors: string[] = [];
+  let plannedOpenRisk = currentOpenRisk;
 
   for (const candidate of top) {
+    if (candidate.bias === "Short" && !settings.allowShorts) continue;
     const size = calcPositionSizing(candidate, equity, settings);
     if (!size) continue;
-    const clientOrderId = `msg-v87-${settings.brokerMode === "Alpaca Live" ? "live" : settings.brokerMode === "Alpaca Paper" ? "paper" : "sim"}-${candidate.symbol.toLowerCase()}-${randomUUID().slice(0, 14)}`;
+    if (plannedOpenRisk + size.riskDollars > maxTotalOpenRiskDollars) {
+      await logBotEvent(
+        "trade_blocked_risk_cap",
+        `${candidate.symbol} blocked by max total open risk cap.`,
+        {
+          symbol: candidate.symbol,
+          plannedOpenRisk,
+          candidateRisk: size.riskDollars,
+          maxTotalOpenRiskDollars,
+        },
+      );
+      continue;
+    }
+    const clientOrderId = `msg-v90-${settings.brokerMode === "Alpaca Live" ? "live" : settings.brokerMode === "Alpaca Paper" ? "paper" : "sim"}-${candidate.symbol.toLowerCase()}-${randomUUID().slice(0, 14)}`;
     let brokerOrder: any = null;
     let executionMode = settings.brokerMode;
-    let notes = "Opened by v8.9 cloud bot in Supabase simulation mode. No broker order was placed.";
+    let notes =
+      "Opened by v9.0 cloud bot in Supabase simulation mode. No broker order was placed.";
 
-    const brokerOrderEnabled = (settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled) || (settings.brokerMode === "Alpaca Live" && settings.brokerLiveEnabled);
+    const brokerOrderEnabled =
+      (settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled) ||
+      (settings.brokerMode === "Alpaca Live" && settings.brokerLiveEnabled);
     if (brokerOrderEnabled) {
       try {
-        brokerOrder = await submitAlpacaBrokerBracketOrder(settings.brokerMode, {
-          symbol: candidate.symbol,
-          side: candidate.bias === "Short" ? "sell" : "buy",
-          qty: size.shares,
-          takeProfit: candidate.target,
-          stopLoss: candidate.stop,
-          clientOrderId,
-        });
-        notes = settings.brokerMode === "Alpaca Live"
-          ? "Opened by v8.9 cloud bot using Alpaca LIVE broker bracket order. This is real-money mode and was enabled from admin/environment gates."
-          : "Opened by v8.9 cloud bot using Alpaca paper broker bracket order.";
-        await logBotEvent(settings.brokerMode === "Alpaca Live" ? "broker_live_order_submitted" : "broker_paper_order_submitted", `${candidate.symbol} ${settings.brokerMode} bracket order submitted.`, { symbol: candidate.symbol, brokerOrderId: brokerOrder.id, clientOrderId, status: brokerOrder.status });
+        brokerOrder = await submitAlpacaBrokerBracketOrder(
+          settings.brokerMode,
+          {
+            symbol: candidate.symbol,
+            side: candidate.bias === "Short" ? "sell" : "buy",
+            qty: size.shares,
+            takeProfit: candidate.target,
+            stopLoss: candidate.stop,
+            clientOrderId,
+            allowFractional: settings.allowFractionalShares,
+          },
+        );
+        notes =
+          settings.brokerMode === "Alpaca Live"
+            ? "Opened by v9.0 cloud bot using Alpaca LIVE broker bracket order. This is real-money mode and was enabled from admin/environment gates."
+            : "Opened by v9.0 cloud bot using Alpaca paper broker bracket order.";
+        await logBotEvent(
+          settings.brokerMode === "Alpaca Live"
+            ? "broker_live_order_submitted"
+            : "broker_paper_order_submitted",
+          `${candidate.symbol} ${settings.brokerMode} bracket order submitted.`,
+          {
+            symbol: candidate.symbol,
+            brokerOrderId: brokerOrder.id,
+            clientOrderId,
+            status: brokerOrder.status,
+          },
+        );
       } catch (err) {
-        const message = err instanceof Error ? err.message : "unknown broker error";
+        const message =
+          err instanceof Error ? err.message : "unknown broker error";
         brokerErrors.push(`${candidate.symbol}: ${message}`);
-        await logBotEvent(settings.brokerMode === "Alpaca Live" ? "broker_live_order_error" : "broker_paper_order_error", `${candidate.symbol} ${settings.brokerMode} order failed: ${message}`, { symbol: candidate.symbol, clientOrderId });
+        await logBotEvent(
+          settings.brokerMode === "Alpaca Live"
+            ? "broker_live_order_error"
+            : "broker_paper_order_error",
+          `${candidate.symbol} ${settings.brokerMode} order failed: ${message}`,
+          { symbol: candidate.symbol, clientOrderId },
+        );
         continue;
       }
     }
@@ -375,7 +709,7 @@ async function openPaperTrades(settings: CloudBotSettings, candidates: CloudBotC
       rr: candidate.rr,
       score: candidate.score,
       status: "Open",
-      shares: brokerOrderEnabled ? Math.floor(size.shares) : size.shares,
+      shares: size.shares,
       risk_dollars: size.riskDollars,
       position_value: size.positionValue,
       last_price: candidate.lastPrice || candidate.entry,
@@ -386,16 +720,57 @@ async function openPaperTrades(settings: CloudBotSettings, candidates: CloudBotC
       broker_status: brokerOrder?.status || null,
       broker_payload: brokerOrder || null,
       notes,
-      raw: { candidate, shares: size.shares, riskDollars: size.riskDollars, positionValue: size.positionValue, cloudBot: true, executionMode, brokerOrder },
+      raw: {
+        candidate,
+        shares: size.shares,
+        riskDollars: size.riskDollars,
+        positionValue: size.positionValue,
+        cloudBot: true,
+        executionMode,
+        brokerOrder,
+        guardrails: {
+          maxNewTradesPerRun: settings.maxNewTradesPerRun,
+          cooldownMinutes: settings.cooldownMinutes,
+          maxTotalOpenRiskPct: settings.maxTotalOpenRiskPct,
+        },
+      },
     });
+    plannedOpenRisk += size.riskDollars;
   }
 
-  if (!rows.length) return { opened: 0, symbols: [] as string[], reason: brokerErrors.length ? `Broker orders failed: ${brokerErrors.slice(0, 2).join("; ")}` : "No sized paper trades could be opened." };
-  await supabaseRest("paper_trades", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify(rows) });
+  if (!rows.length)
+    return {
+      opened: 0,
+      symbols: [] as string[],
+      reason: brokerErrors.length
+        ? `Broker orders failed: ${brokerErrors.slice(0, 2).join("; ")}`
+        : "No sized paper trades could be opened after guardrails.",
+    };
+  await supabaseRest("paper_trades", {
+    method: "POST",
+    headers: { Prefer: "return=minimal" },
+    body: JSON.stringify(rows),
+  });
   const symbols = rows.map((r: any) => r.symbol);
-  const brokerOrderEnabled = (settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled) || (settings.brokerMode === "Alpaca Live" && settings.brokerLiveEnabled);
-  await logBotEvent(brokerOrderEnabled ? (settings.brokerMode === "Alpaca Live" ? "broker_live_trade_opened" : "broker_paper_trade_opened") : "paper_trade_opened", `Opened ${symbols.length} ${settings.brokerMode} trade record(s): ${symbols.join(", ")}.`, { symbols, brokerErrors });
-  return { opened: symbols.length, symbols, reason: brokerOrderEnabled ? `Submitted ${settings.brokerMode} broker orders.` : "Opened Supabase simulation trades." };
+  const brokerOrderEnabled =
+    (settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled) ||
+    (settings.brokerMode === "Alpaca Live" && settings.brokerLiveEnabled);
+  await logBotEvent(
+    brokerOrderEnabled
+      ? settings.brokerMode === "Alpaca Live"
+        ? "broker_live_trade_opened"
+        : "broker_paper_trade_opened"
+      : "paper_trade_opened",
+    `Opened ${symbols.length} ${settings.brokerMode} trade record(s): ${symbols.join(", ")}.`,
+    { symbols, brokerErrors, maxNewTradesPerRun: settings.maxNewTradesPerRun },
+  );
+  return {
+    opened: symbols.length,
+    symbols,
+    reason: brokerOrderEnabled
+      ? `Submitted ${settings.brokerMode} broker orders.`
+      : "Opened Supabase simulation trades.",
+  };
 }
 
 export async function runCloudPaperBot(reason = "scheduled") {
@@ -403,22 +778,75 @@ export async function runCloudPaperBot(reason = "scheduled") {
   const startedAt = new Date().toISOString();
   const market = getSimpleMarketStatus();
   if (!settings.enabled) {
-    await logBotEvent("bot_skipped", "Cloud bot skipped: BOT_ENABLED is false.", { reason });
-    return { ok: true, skipped: true, message: "Cloud bot disabled.", startedAt, finishedAt: new Date().toISOString(), market, settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length } };
+    await logBotEvent(
+      "bot_skipped",
+      "Cloud bot skipped: BOT_ENABLED is false.",
+      { reason },
+    );
+    return {
+      ok: true,
+      skipped: true,
+      message: "Cloud bot disabled.",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      market,
+      settings: {
+        universeLabel: settings.universeLabel,
+        symbols: settings.symbols.length,
+      },
+    };
   }
   if (!market.isOpen && !settings.allowStaleSimulation) {
-    await logBotEvent("bot_skipped_market_closed", "Cloud bot skipped: market appears closed.", { reason, market });
-    return { ok: true, skipped: true, message: "Market closed; no scan or paper entries opened.", startedAt, finishedAt: new Date().toISOString(), market, settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length } };
+    await logBotEvent(
+      "bot_skipped_market_closed",
+      "Cloud bot skipped: market appears closed.",
+      { reason, market },
+    );
+    return {
+      ok: true,
+      skipped: true,
+      message: "Market closed; no scan or paper entries opened.",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      market,
+      settings: {
+        universeLabel: settings.universeLabel,
+        symbols: settings.symbols.length,
+      },
+    };
   }
 
-  await logBotEvent("bot_started", `Cloud bot started (${reason}) with ${settings.symbols.length} tracked symbols.`, { symbols: settings.symbols.length, timeframe: settings.timeframe, brokerMode: settings.brokerMode });
+  await logBotEvent(
+    "bot_started",
+    `Cloud bot started (${reason}) with ${settings.symbols.length} tracked symbols.`,
+    {
+      symbols: settings.symbols.length,
+      timeframe: settings.timeframe,
+      brokerMode: settings.brokerMode,
+    },
+  );
   const brokerSync = await syncBrokerState(settings);
   const tradeCheck = await checkOpenTrades(settings);
   const candidates: CloudBotCandidate[] = [];
   for (const symbol of settings.symbols) {
     try {
-      const candles = await fetchAlpacaBars({ symbol, timeframe: settings.timeframe, mode: "latest", limit: 250 });
-      const g = gradeSetup(candles, settings.timeframe, new Date(), { mode: settings.targetMode, fixedR: settings.fixedTargetR, atrMultiple: settings.atrTargetMultiple }, { profile: settings.gradeProfile });
+      const candles = await fetchAlpacaBars({
+        symbol,
+        timeframe: settings.timeframe,
+        mode: "latest",
+        limit: Math.max(settings.warmupBars, 250),
+      });
+      const g = gradeSetup(
+        candles,
+        settings.timeframe,
+        new Date(),
+        {
+          mode: settings.targetMode,
+          fixedR: settings.fixedTargetR,
+          atrMultiple: settings.atrTargetMultiple,
+        },
+        { profile: settings.gradeProfile },
+      );
       if (g) candidates.push(makeCandidate(symbol, candles, g, settings));
     } catch (err) {
       candidates.push({
@@ -437,16 +865,59 @@ export async function runCloudPaperBot(reason = "scheduled") {
         actionable: false,
         priority: -1,
         reasons: [],
-        warnings: [err instanceof Error ? err.message : "Failed to scan symbol"],
+        warnings: [
+          err instanceof Error ? err.message : "Failed to scan symbol",
+        ],
         lastPrice: 0,
       });
     }
   }
-  const sorted = candidates.sort((a, b) => b.priority - a.priority || b.score - a.score);
+  const sorted = candidates.sort(
+    (a, b) => b.priority - a.priority || b.score - a.score,
+  );
   const finishedAt = new Date().toISOString();
-  const scanRunId = await saveScanRun(settings, sorted, startedAt, finishedAt, reason);
+  const scanRunId = await saveScanRun(
+    settings,
+    sorted,
+    startedAt,
+    finishedAt,
+    reason,
+  );
   const openResult = await openPaperTrades(settings, sorted);
   const actionable = sorted.filter((c) => c.actionable).length;
-  await logBotEvent("bot_completed", `Cloud bot completed: ${actionable}/${settings.symbols.length} actionable, ${openResult.opened} opened.`, { scanRunId, tradeCheck, brokerSync, openResult, actionable, scanned: sorted.length });
-  return { ok: true, skipped: false, startedAt, finishedAt, scanRunId, scanned: sorted.length, actionable, tradeCheck, brokerSync, openResult, market, settings: { universeLabel: settings.universeLabel, symbols: settings.symbols.length, timeframe: settings.timeframe, maxOpenPositions: settings.maxOpenPositions, paperTradingEnabled: settings.paperTradingEnabled, brokerMode: settings.brokerMode, brokerPaperEnabled: settings.brokerPaperEnabled, brokerLiveEnabled: settings.brokerLiveEnabled } };
+  await logBotEvent(
+    "bot_completed",
+    `Cloud bot completed: ${actionable}/${settings.symbols.length} actionable, ${openResult.opened} opened.`,
+    {
+      scanRunId,
+      tradeCheck,
+      brokerSync,
+      openResult,
+      actionable,
+      scanned: sorted.length,
+    },
+  );
+  return {
+    ok: true,
+    skipped: false,
+    startedAt,
+    finishedAt,
+    scanRunId,
+    scanned: sorted.length,
+    actionable,
+    tradeCheck,
+    brokerSync,
+    openResult,
+    market,
+    settings: {
+      universeLabel: settings.universeLabel,
+      symbols: settings.symbols.length,
+      timeframe: settings.timeframe,
+      maxOpenPositions: settings.maxOpenPositions,
+      paperTradingEnabled: settings.paperTradingEnabled,
+      brokerMode: settings.brokerMode,
+      brokerPaperEnabled: settings.brokerPaperEnabled,
+      brokerLiveEnabled: settings.brokerLiveEnabled,
+    },
+  };
 }

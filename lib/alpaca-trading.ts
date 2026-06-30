@@ -201,19 +201,21 @@ export async function submitAlpacaBrokerBracketOrder(mode: AlpacaBrokerMode, inp
   takeProfit: number;
   stopLoss: number;
   clientOrderId: string;
+  allowFractional?: boolean;
 }) {
   if (mode !== "Alpaca Paper" && mode !== "Alpaca Live") throw new Error("Broker order skipped: selected execution mode does not submit broker orders.");
   const status = getBrokerConfigStatus(mode);
   if (!status.canSubmitOrders) throw new Error(status.message);
-  const wholeQty = Math.floor(input.qty);
-  if (!Number.isFinite(wholeQty) || wholeQty < 1) throw new Error("Broker order skipped: calculated quantity is below 1 whole share.");
+  const qty = input.allowFractional ? Number(input.qty.toFixed(4)) : Math.floor(input.qty);
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error("Broker order skipped: calculated quantity is not tradable.");
+  if (!input.allowFractional && qty < 1) throw new Error("Broker order skipped: calculated quantity is below 1 whole share.");
   return alpacaTradingFetch<AlpacaOrder>(mode, "/v2/orders", {
     method: "POST",
     body: JSON.stringify({
       symbol: input.symbol,
       side: input.side,
       type: "market",
-      qty: String(wholeQty),
+      qty: String(qty),
       time_in_force: "day",
       order_class: "bracket",
       client_order_id: input.clientOrderId,
@@ -223,6 +225,17 @@ export async function submitAlpacaBrokerBracketOrder(mode: AlpacaBrokerMode, inp
   });
 }
 
+export async function cancelAlpacaBrokerOrders(mode: AlpacaBrokerMode) {
+  if (mode !== "Alpaca Paper" && mode !== "Alpaca Live") throw new Error("Cancel skipped: selected execution mode does not use a broker.");
+  return alpacaTradingFetch<unknown>(mode, "/v2/orders", { method: "DELETE" });
+}
+
+export async function closeAlpacaBrokerPositions(mode: AlpacaBrokerMode, cancelOrders = true) {
+  if (mode !== "Alpaca Paper" && mode !== "Alpaca Live") throw new Error("Close skipped: selected execution mode does not use a broker.");
+  const params = cancelOrders ? "?cancel_orders=true" : "";
+  return alpacaTradingFetch<unknown>(mode, `/v2/positions${params}`, { method: "DELETE" });
+}
+
 export async function submitAlpacaPaperBracketOrder(input: {
   symbol: string;
   side: "buy" | "sell";
@@ -230,6 +243,7 @@ export async function submitAlpacaPaperBracketOrder(input: {
   takeProfit: number;
   stopLoss: number;
   clientOrderId: string;
+  allowFractional?: boolean;
 }) {
   return submitAlpacaBrokerBracketOrder("Alpaca Paper", input);
 }
