@@ -217,12 +217,12 @@ async function saveScanRun(
       reason,
       source: settings.source,
       timeframe: settings.timeframe,
-      universe_label: `${settings.symbols.length} tracked symbols · v9.0 cloud bot`,
+      universe_label: `${settings.symbols.length} tracked symbols · v9.1 cloud bot`,
       symbols_count: settings.symbols.length,
       candidates_count: candidates.length,
       actionable_count: actionableCount,
       settings: {
-        version: "v9.0",
+        version: "v9.1",
         executionMode: settings.brokerMode,
         brokerPaperEnabled: settings.brokerPaperEnabled,
         brokerLiveEnabled: settings.brokerLiveEnabled,
@@ -250,10 +250,10 @@ async function saveScanRun(
       },
       notes:
         settings.brokerMode === "Alpaca Paper"
-          ? "Saved by v9.0 scheduled bot. Alpaca paper broker orders may be placed only when broker paper is enabled."
+          ? "Saved by v9.1 scheduled bot. Alpaca paper broker orders may be placed only when broker paper is enabled."
           : settings.brokerMode === "Alpaca Live"
-            ? "Saved by v9.0 scheduled bot. Alpaca live broker orders may be placed only when live mode is explicitly unlocked and enabled."
-            : "Saved by v9.0 scheduled cloud bot. No broker orders placed in simulation mode.",
+            ? "Saved by v9.1 scheduled bot. Alpaca live broker orders may be placed only when live mode is explicitly unlocked and enabled."
+            : "Saved by v9.1 scheduled cloud bot. No broker orders placed in simulation mode.",
     }),
   });
   const scanRunId = rows[0]?.id;
@@ -648,7 +648,7 @@ async function openPaperTrades(
     let brokerOrder: any = null;
     let executionMode = settings.brokerMode;
     let notes =
-      "Opened by v9.0 cloud bot in Supabase simulation mode. No broker order was placed.";
+      "Opened by v9.1 cloud bot in Supabase simulation mode. No broker order was placed.";
 
     const brokerOrderEnabled =
       (settings.brokerMode === "Alpaca Paper" && settings.brokerPaperEnabled) ||
@@ -669,8 +669,8 @@ async function openPaperTrades(
         );
         notes =
           settings.brokerMode === "Alpaca Live"
-            ? "Opened by v9.0 cloud bot using Alpaca LIVE broker bracket order. This is real-money mode and was enabled from admin/environment gates."
-            : "Opened by v9.0 cloud bot using Alpaca paper broker bracket order.";
+            ? "Opened by v9.1 cloud bot using Alpaca LIVE broker bracket order. This is real-money mode and was enabled from admin/environment gates."
+            : "Opened by v9.1 cloud bot using Alpaca paper broker bracket order.";
         await logBotEvent(
           settings.brokerMode === "Alpaca Live"
             ? "broker_live_order_submitted"

@@ -3,10 +3,32 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { Candle, GradeResult } from "@/lib/trading";
 
+type ChartOverlay = {
+  entry?: number | null;
+  stop?: number | null;
+  target?: number | null;
+  source?: string;
+};
+
 type TradingChartProps = {
   candles: Candle[];
   grade: GradeResult | null;
+  overlay?: ChartOverlay | null;
 };
+
+function formatEtTime(timestampSeconds: number) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(timestampSeconds * 1000));
+}
+
+function validNumber(value?: number | null): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
 
 function sma(values: Candle[], period: number) {
   return values.map((candle, index) => {
@@ -20,7 +42,7 @@ function sma(values: Candle[], period: number) {
   });
 }
 
-export default function TradingChart({ candles, grade }: TradingChartProps) {
+export default function TradingChart({ candles, grade, overlay }: TradingChartProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const chartData = useMemo(() => {
@@ -68,10 +90,21 @@ export default function TradingChart({ candles, grade }: TradingChartProps) {
           borderColor: "rgba(148, 163, 184, 0.25)",
           scaleMargins: { top: 0.08, bottom: 0.22 },
         },
+        localization: {
+          timeFormatter: (time: any) => {
+            const seconds = typeof time === "number" ? time : Number(time?.timestamp || 0);
+            return seconds ? `${formatEtTime(seconds)} ET` : "";
+          },
+        },
         timeScale: {
           borderColor: "rgba(148, 163, 184, 0.25)",
           timeVisible: true,
           secondsVisible: false,
+          tickMarkFormatter: (time: any) => {
+            const seconds = typeof time === "number" ? time : Number(time?.timestamp || 0);
+            if (!seconds) return "";
+            return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" }).format(new Date(seconds * 1000));
+          },
         },
         crosshair: {
           mode: 0,
@@ -106,25 +139,33 @@ export default function TradingChart({ candles, grade }: TradingChartProps) {
       });
       sma20Series.setData(sma(candles, 20));
 
-      if (grade && grade.bias !== "Neutral") {
+      const entry = overlay && validNumber(overlay.entry) ? overlay.entry : grade && grade.bias !== "Neutral" ? grade.entry : null;
+      const stop = overlay && validNumber(overlay.stop) ? overlay.stop : grade && grade.bias !== "Neutral" ? grade.stop : null;
+      const target = overlay && validNumber(overlay.target) ? overlay.target : grade && grade.bias !== "Neutral" ? grade.target : null;
+
+      if (validNumber(entry)) {
         candleSeries.createPriceLine({
-          price: grade.entry,
+          price: entry,
           color: "#38bdf8",
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
           title: "Entry",
         });
+      }
+      if (validNumber(stop)) {
         candleSeries.createPriceLine({
-          price: grade.stop,
+          price: stop,
           color: "#ef4444",
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
           axisLabelVisible: true,
           title: "Stop",
         });
+      }
+      if (validNumber(target)) {
         candleSeries.createPriceLine({
-          price: grade.target,
+          price: target,
           color: "#22c55e",
           lineWidth: 2,
           lineStyle: LineStyle.Dashed,
@@ -152,11 +193,16 @@ export default function TradingChart({ candles, grade }: TradingChartProps) {
       disposed = true;
       cleanup();
     };
-  }, [chartData, volumeData, candles, grade]);
+  }, [chartData, volumeData, candles, grade, overlay]);
 
   if (!candles.length) {
     return <div className="chart-empty">Fetch candles or paste CSV data to show the chart.</div>;
   }
 
-  return <div className="chart-wrap" ref={containerRef} />;
+  return (
+    <div>
+      <div className="chart-wrap" ref={containerRef} />
+      <div className="chart-time-note">Chart time zone: Eastern Time (ET). Levels prioritize open app/broker trade records, then latest signal levels.</div>
+    </div>
+  );
 }

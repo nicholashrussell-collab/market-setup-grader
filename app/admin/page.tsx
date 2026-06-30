@@ -89,7 +89,7 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 100,
-  notes: "Managed from v9.0 admin. Paper guardrails, best-profile settings, and the tracked-symbol list are the source of truth for the scheduled cloud bot.",
+  notes: "Managed from v9.1 admin. Paper guardrails, best-profile settings, and the tracked-symbol list are the source of truth for the scheduled cloud bot.",
   broker_mode: "Supabase Simulation",
   broker_paper_enabled: false,
   broker_live_enabled: false,
@@ -426,7 +426,7 @@ export default function AdminPage() {
         <section className="viewer-main-area admin-main-v86 admin-main-v87">
           <header className="viewer-topbar page-header-v81 admin-header-v85 admin-header-v86 admin-header-v87">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.0</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
+              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.1</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
               <h1>Paper Trading Guardrails</h1>
               <p>Set what the cloud bot is allowed to do. The viewer shows what happened. Vercel Cron runs the bot in the background; your laptop does not need to stay open.</p>
             </div>
@@ -489,7 +489,7 @@ export default function AdminPage() {
           <section id="settings" className="dash-panel settings-panel-v80 settings-panel-v86 settings-panel-v87">
             <div className="panel-heading-row">
               <div><h2>Best-bot profile + guardrails</h2><p>These are the actual rules the cloud worker will use on the next run. Defaults match the 05/31 corrected best profile.</p></div>
-              <span className="small-pill">v9.0 guardrails</span>
+              <span className="small-pill">v9.1 guardrails</span>
             </div>
             <div className="settings-grid admin-settings-grid compact-settings-grid settings-grid-v86 settings-grid-v87">
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>

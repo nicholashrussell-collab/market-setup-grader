@@ -2519,7 +2519,7 @@ export function scoreRangeStats(trades: JournalTrade[]): ScoreRangeStats[] {
 export function formatDateTime(value: string): string {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return value;
-  return date.toLocaleString([], { month: "numeric", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return `${date.toLocaleString("en-US", { timeZone: "America/New_York", month: "numeric", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })} ET`;
 }
 
 export function sampleCsv(): string {

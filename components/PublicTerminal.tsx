@@ -8,6 +8,7 @@ import { Candle, GradeResult, Timeframe, formatDateTime, gradeSetup } from "@/li
 type BotEvent = { id: string; created_at: string; event_type: string; message: string };
 type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string; execution_mode?: string; broker_order_id?: string; broker_status?: string };
 type BrokerStatus = { configured?: boolean; isPaper?: boolean; isLive?: boolean; liveUnlocked?: boolean; canSubmitOrders?: boolean; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string }; orders?: any[]; positions?: any[] };
+type ChartOverlay = { entry?: number | null; stop?: number | null; target?: number | null; source?: string };
 
 type CloudBotStatus = {
   ok: boolean;
@@ -113,6 +114,30 @@ function cleanUniverseLabel(label?: string) {
   return raw;
 }
 
+function normalizeSymbol(value: string) {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9.]/g, "");
+}
+
+function tradeOverlay(trade?: PaperTrade | null): ChartOverlay | null {
+  if (!trade) return null;
+  return {
+    entry: Number.isFinite(Number(trade.entry)) ? Number(trade.entry) : null,
+    stop: Number.isFinite(Number(trade.stop)) ? Number(trade.stop) : null,
+    target: Number.isFinite(Number(trade.target)) ? Number(trade.target) : null,
+    source: trade.execution_mode?.toLowerCase().includes("alpaca") ? "Open Alpaca Paper trade" : "Open app trade record",
+  };
+}
+
+function signalOverlay(signal?: ScanSignal | null): ChartOverlay | null {
+  if (!signal) return null;
+  return {
+    entry: Number.isFinite(Number(signal.entry)) ? Number(signal.entry) : null,
+    stop: Number.isFinite(Number(signal.stop)) ? Number(signal.stop) : null,
+    target: Number.isFinite(Number(signal.target)) ? Number(signal.target) : null,
+    source: "Latest saved signal",
+  };
+}
+
 async function fetchBars(symbol: string, timeframe: Timeframe) {
   const params = new URLSearchParams({ symbol, timeframe, mode: "latest", limit: "250" });
   const res = await fetch(`/api/alpaca/bars?${params.toString()}`, { cache: "no-store" });
@@ -124,7 +149,11 @@ async function fetchBars(symbol: string, timeframe: Timeframe) {
 export default function PublicTerminal({ activeView = "overview" }: { activeView?: ActiveView }) {
   const [bot, setBot] = useState<CloudBotStatus | null>(null);
   const [latest, setLatest] = useState<LatestSignals | null>(null);
-  const [selectedSymbol, setSelectedSymbol] = useState("SPY");
+  const [selectedSymbol, setSelectedSymbol] = useState(() => {
+    if (typeof window === "undefined") return "SPY";
+    const params = new URLSearchParams(window.location.search);
+    return normalizeSymbol(params.get("symbol") || window.localStorage.getItem("msg:selectedSymbol") || "SPY") || "SPY";
+  });
   const [selectedCandles, setSelectedCandles] = useState<Candle[]>([]);
   const [selectedGrade, setSelectedGrade] = useState<GradeResult | null>(null);
   const [status, setStatus] = useState("Loading autonomous dashboard...");
@@ -145,6 +174,9 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   const paperEquity = startingEquity + realizedPnl + unrealizedPnl;
   const returnPct = startingEquity ? ((paperEquity - startingEquity) / startingEquity) * 100 : 0;
   const selectedSignal = signals.find((s) => s.symbol === selectedSymbol);
+  const selectedOpenTrade = openTrades.find((trade) => normalizeSymbol(trade.symbol) === selectedSymbol);
+  const selectedOverlay = tradeOverlay(selectedOpenTrade) || signalOverlay(selectedSignal);
+  const overlaySource = selectedOverlay?.source || (selectedGrade && selectedGrade.bias !== "Neutral" ? "Fresh chart grade" : "No active overlay");
 
   const scanStats = useMemo(() => {
     const total = Number(latestScan?.candidates_count || latest?.totalCandidates || signals.length || 0);
@@ -164,8 +196,9 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
       const latestData = await latestRes.json();
       setBot(botData);
       setLatest(latestData);
-      const firstSymbol = latestData?.signals?.[0]?.symbol || botData?.openTrades?.[0]?.symbol || selectedSymbol;
-      if (firstSymbol && firstSymbol !== selectedSymbol && !selectedCandles.length) setSelectedSymbol(firstSymbol);
+      const savedSymbol = typeof window !== "undefined" ? window.localStorage.getItem("msg:selectedSymbol") : null;
+      const firstSymbol = savedSymbol || botData?.openTrades?.[0]?.symbol || latestData?.signals?.[0]?.symbol || selectedSymbol;
+      if (firstSymbol && normalizeSymbol(firstSymbol) !== selectedSymbol && !selectedCandles.length) setSelectedSymbol(normalizeSymbol(firstSymbol));
       setStatus(`Synced ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}. Viewer is read-only.`);
       setError("");
     } catch (err) {
@@ -174,8 +207,15 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   }, [selectedCandles.length, selectedSymbol, signalLimit]);
 
   const loadChart = useCallback(async (symbol: string) => {
-    const normalized = symbol.toUpperCase();
+    const normalized = normalizeSymbol(symbol);
+    if (!normalized) return;
     setSelectedSymbol(normalized);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("msg:selectedSymbol", normalized);
+      const url = new URL(window.location.href);
+      url.searchParams.set("symbol", normalized);
+      window.history.replaceState({}, "", url.toString());
+    }
     const timeframe = ((bot?.settings?.timeframe || latest?.scan?.timeframe || "15Min") as Timeframe);
     const cacheKey = `${normalized}|${timeframe}`;
     const cached = chartCache.current.get(cacheKey);
@@ -210,7 +250,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   const tradeArmed = Boolean(bot?.settings?.paperTradingEnabled);
   const marketOpen = Boolean(bot?.market?.isOpen);
   const connected = Boolean(bot?.configured && latest?.configured !== false);
-  const selectedStatus = selectedSignal ? signalStatus(selectedSignal) : "No cloud signal selected yet.";
+  const selectedStatus = selectedOpenTrade ? "Open position selected" : selectedSignal ? signalStatus(selectedSignal) : "No cloud signal selected yet.";
   const currentUniverse = "Tracked symbols";
   const currentTimeframe = bot?.settings?.timeframe || "15Min";
   const currentScanLimit = bot?.settings?.symbols || bot?.settings?.scanLimit || 0;
@@ -242,8 +282,8 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
 
   const chartPanel = (
     <section id="chart" className="dash-panel chart-panel pro-chart-panel clean-chart-card">
-      <div className="panel-heading-row"><div><h2>{selectedSymbol} chart</h2><p>{selectedGrade ? `${selectedGrade.bias} · score ${selectedGrade.score} · ${selectedGrade.setupType}` : "Click a signal, open trade, or symbol to inspect."}</p></div><div className="panel-actions-mini"><StatusBadge tone="info">Read-only</StatusBadge>{selectedSignal ? <StatusBadge tone={signalTone(selectedSignal)}>{selectedStatus}</StatusBadge> : null}</div></div>
-      <TradingChart candles={selectedCandles} grade={selectedGrade} />
+      <div className="panel-heading-row"><div><h2>{selectedSymbol} chart</h2><p>{selectedOpenTrade ? `Open ${selectedOpenTrade.bias} position · entry ${formatPrice(selectedOpenTrade.entry)} · stop ${formatPrice(selectedOpenTrade.stop)} · target ${formatPrice(selectedOpenTrade.target)}` : selectedGrade ? `${selectedGrade.bias} · score ${selectedGrade.score} · ${selectedGrade.setupType}` : "Click a signal, open trade, or symbol to inspect."}</p><small className="chart-context-note">Selected symbol is saved while you move between Viewer pages. Chart timestamps are shown in Eastern Time (ET).</small></div><div className="panel-actions-mini"><StatusBadge tone="info">Read-only</StatusBadge><StatusBadge tone={selectedOpenTrade ? "good" : selectedSignal ? signalTone(selectedSignal) : "neutral"}>{selectedStatus}</StatusBadge><StatusBadge tone="info">{overlaySource}</StatusBadge></div></div>
+      <TradingChart candles={selectedCandles} grade={selectedGrade} overlay={selectedOverlay} />
     </section>
   );
 
@@ -270,8 +310,8 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <StatTile label="Realized P/L" value={money(realizedPnl)} helper={`${closedTrades.length} recent closed trades loaded`} tone={realizedPnl >= 0 ? "good" : "bad"} />
         <StatTile label="Unrealized P/L" value={money(unrealizedPnl)} helper="Open trade mark-to-market" tone={unrealizedPnl >= 0 ? "good" : "bad"} />
       </section>
-      <section className="dash-panel"><div className="panel-heading-row"><div><h2>Open bot trade records</h2><p>These are server-side trade records from simulation, Alpaca Paper, or locked/unlocked broker modes.</p></div><span className="small-pill">{openTrades.length}</span></div><div className="position-list page-position-list">{openTrades.length ? openTrades.map((p) => (<div key={p.id} className="position-row open" onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · bot record · opened {formatDateTime(p.created_at)}</span></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div></div>)) : <p className="muted">No open bot trade records yet.</p>}</div></section>
-      <section className="dash-panel"><div className="panel-heading-row"><div><h2>Recent closed trades</h2><p>Closed bot trade outcomes loaded from Supabase.</p></div><span className="small-pill">{closedTrades.length}</span></div><div className="position-list page-position-list">{closedTrades.length ? closedTrades.slice(0, 30).map((p) => (<div key={p.id} className="position-row closed" onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · {p.notes || "closed"}</span></div><div><strong>{money(Number(p.result_dollars || 0))}</strong><span>{p.result_r !== undefined ? `${p.result_r}R` : "closed"}</span></div></div>)) : <p className="muted">No closed bot record trades loaded.</p>}</div></section>
+      <section className="dash-panel"><div className="panel-heading-row"><div><h2>Open bot trade records</h2><p>These are server-side trade records from simulation, Alpaca Paper, or locked/unlocked broker modes.</p></div><span className="small-pill">{openTrades.length}</span></div><div className="position-list page-position-list">{openTrades.length ? openTrades.map((p) => (<div key={p.id} className={`position-row open ${normalizeSymbol(p.symbol) === selectedSymbol ? "selected-row" : ""}`} onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · entry {formatPrice(p.entry)} · stop {formatPrice(p.stop)} · target {formatPrice(p.target)}</span><small>Opened {formatDateTime(p.created_at)} · click to pin this symbol on the Chart Desk</small></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div></div>)) : <p className="muted">No open bot trade records yet.</p>}</div></section>
+      <section className="dash-panel"><div className="panel-heading-row"><div><h2>Recent closed trades</h2><p>Closed bot trade outcomes loaded from Supabase.</p></div><span className="small-pill">{closedTrades.length}</span></div><div className="position-list page-position-list">{closedTrades.length ? closedTrades.slice(0, 30).map((p) => (<div key={p.id} className={`position-row closed ${normalizeSymbol(p.symbol) === selectedSymbol ? "selected-row" : ""}`} onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · {p.notes || "closed"}</span><small>Click to pin this symbol on the Chart Desk</small></div><div><strong>{money(Number(p.result_dollars || 0))}</strong><span>{p.result_r !== undefined ? `${p.result_r}R` : "closed"}</span></div></div>)) : <p className="muted">No closed bot record trades loaded.</p>}</div></section>
     </section>
   );
 
@@ -295,7 +335,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   );
 
   return (
-    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 viewer-v86 viewer-v88 viewer-v89">
+    <main className="dash-shell public-shell viewer-v79 viewer-v80 viewer-v81 viewer-v86 viewer-v88 viewer-v89 viewer-v91">
       <div className="terminal-workspace pro-app-shell">
         <aside className="viewer-sidebar" aria-label="Viewer navigation">
           <div className="sidebar-brand">
@@ -303,7 +343,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
             <div><strong>Setup Grader</strong><small>Autonomous viewer</small></div>
           </div>
           <nav className="sidebar-nav route-nav">
-            {navItems.map((item) => <Link key={item.id} href={item.href} className={activeView === item.id ? "active" : ""}><span>{item.label}</span><small>{item.helper}</small></Link>)}
+            {navItems.map((item) => <Link key={item.id} href={item.id === "chart" ? `${item.href}?symbol=${selectedSymbol}` : item.href} className={activeView === item.id ? "active" : ""}><span>{item.label}</span><small>{item.helper}</small></Link>)}
           </nav>
           <div className="sidebar-system-card viewer-orientation-card-v88">
             <span className="state-dot info" />
@@ -322,7 +362,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <section className="viewer-main-area page-viewer-main">
           <header className="viewer-topbar page-header-v81">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v9.0</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v9.1</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
               <h1>{activeLabel}</h1>
               <p>{activeView === "overview" ? "A professional monitoring desk for the scheduled cloud bot. The public site is view-only; the private admin page controls settings and execution." : "This page is part of the read-only viewer. Use the left navigation to move between dashboard sections without changing the bot."}</p>
             </div>
@@ -347,11 +387,12 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
             <h2>{selectedSymbol}</h2>
             <div className="selected-score compact-selected-v88">
               <span>{selectedSignal?.score ?? selectedGrade?.score ?? "—"}</span>
-              <div><strong>{selectedSignal?.bias || selectedGrade?.bias || "Watch"}</strong><small>{selectedSignal?.setup || selectedGrade?.setupType || "No current signal"}</small></div>
+              <div><strong>{selectedOpenTrade?.bias || selectedSignal?.bias || selectedGrade?.bias || "Watch"}</strong><small>{selectedOpenTrade ? "Open position" : selectedSignal?.setup || selectedGrade?.setupType || "No current signal"}</small></div>
             </div>
             <div className="rail-stack-v88">
-              <RailRow label="Signal" value={selectedStatus} helper="Selected symbol from the viewer." tone={selectedSignal?.actionable ? "good" : "info"} />
-              <RailRow label="Entry / stop / target" value={`${formatPrice(selectedSignal?.entry ?? selectedGrade?.entry)} / ${formatPrice(selectedSignal?.stop ?? selectedGrade?.stop)} / ${formatPrice(selectedSignal?.target ?? selectedGrade?.target)}`} helper={selectedSignal?.rr ? `${Number(selectedSignal.rr).toFixed(2)} R/R` : selectedGrade ? `${selectedGrade.rr}:1 R/R` : "No active levels"} tone="neutral" />
+              <RailRow label="Selection" value={selectedStatus} helper={selectedOpenTrade ? "Open position levels are pinned to the chart." : "Selected symbol from the viewer."} tone={selectedOpenTrade ? "good" : selectedSignal?.actionable ? "good" : "info"} />
+              <RailRow label="Entry / stop / target" value={`${formatPrice(selectedOverlay?.entry ?? selectedGrade?.entry)} / ${formatPrice(selectedOverlay?.stop ?? selectedGrade?.stop)} / ${formatPrice(selectedOverlay?.target ?? selectedGrade?.target)}`} helper={selectedOpenTrade ? `Open P/L ${money(Number(selectedOpenTrade.unrealized_pnl || 0))}` : selectedSignal?.rr ? `${Number(selectedSignal.rr).toFixed(2)} R/R` : selectedGrade ? `${selectedGrade.rr}:1 R/R` : "No active levels"} tone="neutral" />
+              <RailRow label="Overlay source" value={overlaySource} helper="Open positions take priority over latest signals." tone="info" />
             </div>
           </section>
 

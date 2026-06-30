@@ -1,4 +1,4 @@
-# Market Setup Grader v9.0
+# Market Setup Grader v9.1
 
 Tracked-watchlist control room for the autonomous cloud bot.
 
@@ -15,4 +15,4 @@ Tracked-watchlist control room for the autonomous cloud bot.
 
 Copy this folder into your existing GitHub/Vercel project, commit, and push.
 
-Run `supabase/schema.sql` once if you want the database row updated to the v9.0 tracked-symbol defaults.
+Run `supabase/schema.sql` once if you want the database row updated to the v9.1 tracked-symbol defaults.
