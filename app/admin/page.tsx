@@ -56,7 +56,7 @@ type BotControl = {
 
 type BotEvent = { id: string; created_at: string; event_type: string; message: string };
 type PaperTrade = { id: string; created_at: string; symbol: string; bias: string; status: string; entry?: number; stop?: number; target?: number; rr?: number; score?: number; shares?: number; risk_dollars?: number; position_value?: number; last_price?: number; unrealized_pnl?: number; result_dollars?: number; result_r?: number; notes?: string; execution_mode?: string; broker_order_id?: string; broker_status?: string };
-type BrokerStatus = { configured?: boolean; mode?: string; isPaper?: boolean; isLive?: boolean; liveUnlocked?: boolean; canSubmitOrders?: boolean; realTradingLocked?: boolean; baseUrl?: string; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string; cash?: string; status?: string }; orders?: any[]; positions?: any[] };
+type BrokerStatus = { configured?: boolean; mode?: string; isPaper?: boolean; isLive?: boolean; liveUnlocked?: boolean; canSubmitOrders?: boolean; realTradingLocked?: boolean; baseUrl?: string; message?: string; error?: string; account?: { buying_power?: string; portfolio_value?: string; equity?: string; cash?: string; status?: string }; orders?: any[]; positions?: any[] };
 
 type BotStatus = {
   ok: boolean;
@@ -89,7 +89,7 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 100,
-  notes: "Managed from v9.1 admin. Paper guardrails, best-profile settings, and the tracked-symbol list are the source of truth for the scheduled cloud bot.",
+  notes: "Managed from v9.2 admin. Paper guardrails, best-profile settings, and the tracked-symbol list are the source of truth for the scheduled cloud bot.",
   broker_mode: "Supabase Simulation",
   broker_paper_enabled: false,
   broker_live_enabled: false,
@@ -229,7 +229,13 @@ export default function AdminPage() {
   const events = bot?.events || [];
   const realizedPnl = closedTrades.reduce((sum, trade) => sum + Number(trade.result_dollars || 0), 0);
   const unrealizedPnl = openTrades.reduce((sum, trade) => sum + Number(trade.unrealized_pnl || 0), 0);
-  const trackedEquity = Number(control.starting_equity || 5000) + realizedPnl + unrealizedPnl;
+  const brokerAccountEquity = Number(bot?.broker?.account?.equity || bot?.broker?.account?.portfolio_value || 0);
+  const appLedgerEquity = Number(control.starting_equity || 5000) + realizedPnl + unrealizedPnl;
+  const useBrokerEquity = selectedRoute === "paper" && brokerAccountEquity > 0;
+  const trackedEquity = useBrokerEquity ? brokerAccountEquity : appLedgerEquity;
+  const equitySourceLabel = useBrokerEquity ? "Alpaca Paper account" : "App/Supabase ledger";
+  const brokerPositionCount = bot?.broker?.positions?.length ?? 0;
+  const brokerMismatchCount = selectedRoute === "paper" ? Math.max(0, openTrades.length - brokerPositionCount) : 0;
   const canTrade = control.bot_enabled && control.paper_trading_enabled;
   const brokerMode = control.broker_mode || "Supabase Simulation";
   const brokerOk = selectedRoute === "internal" || Boolean(bot?.broker?.canSubmitOrders);
@@ -360,6 +366,21 @@ export default function AdminPage() {
     }
   };
 
+  const paperReset = async (action: "reconcile" | "start_new_test_day") => {
+    const label = action === "reconcile" ? "reconcile app-open records with Alpaca Paper" : "start a new paper test day and archive old app-open records";
+    if (!window.confirm(`Paper reset: ${label}? This changes Supabase app records, not real-money trading.`)) return;
+    setStatus(`Running paper reset: ${label}...`);
+    try {
+      const res = await fetch("/api/admin/paper-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+      const data = await readApiJson(res);
+      if (!res.ok || !data.ok) throw new Error(data.message || "Paper reset action failed.");
+      setStatus(data.message || "Paper reset action completed.");
+      await loadAdminData();
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Paper reset action failed.");
+    }
+  };
+
   const readiness = useMemo(() => [
     { title: "Cloud DB", status: bot?.configured ? "Ready" : "Needs setup", tone: bot?.configured ? "good" as Tone : "bad" as Tone, detail: bot?.configured ? "Supabase can store settings, scans, trades, and logs." : bot?.message || "Supabase is not ready." },
     { title: "Engine", status: control.bot_enabled ? "Running" : "Paused", tone: control.bot_enabled ? "good" as Tone : "warn" as Tone, detail: control.bot_enabled ? "Vercel cron may run every 15 minutes." : "Cron route is paused from admin." },
@@ -426,7 +447,7 @@ export default function AdminPage() {
         <section className="viewer-main-area admin-main-v86 admin-main-v87">
           <header className="viewer-topbar page-header-v81 admin-header-v85 admin-header-v86 admin-header-v87">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.1</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
+              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.2</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
               <h1>Paper Trading Guardrails</h1>
               <p>Set what the cloud bot is allowed to do. The viewer shows what happened. Vercel Cron runs the bot in the background; your laptop does not need to stay open.</p>
             </div>
@@ -441,7 +462,8 @@ export default function AdminPage() {
             <StatTile label="Bot" value={control.bot_enabled ? "Running" : "Paused"} helper={canTrade ? "Execution armed" : "Scan/log only"} tone={control.bot_enabled ? "good" : "warn"} />
             <StatTile label="Mode" value={routeLabel(selectedRoute)} helper={selectedRoute === "live" ? "Live route locked by env gates" : "Paper-safe workflow"} tone={selectedRoute === "live" ? "bad" : "good"} />
             <StatTile label="Last action" value={lastAction.title} helper={bot?.lastEvent ? formatDateTime(bot.lastEvent.created_at) : lastAction.detail} tone={bot?.lastEvent?.event_type?.includes("error") ? "bad" : "info"} />
-            <StatTile label="Tracked equity" value={money(trackedEquity)} helper={`${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={trackedEquity >= Number(control.starting_equity || 5000) ? "good" : "bad"} />
+            <StatTile label="Tracked equity" value={money(trackedEquity)} helper={`${equitySourceLabel} · app ledger ${money(appLedgerEquity)}`} tone={useBrokerEquity || trackedEquity >= Number(control.starting_equity || 5000) ? "good" : "bad"} />
+            <StatTile label="Broker sync" value={selectedRoute === "paper" ? `${openTrades.length} app / ${brokerPositionCount} broker` : "Internal"} helper={brokerMismatchCount ? `${brokerMismatchCount} stale app-open record(s) need reconciliation` : "App records match broker count or broker mode is off"} tone={brokerMismatchCount ? "warn" : "good"} />
           </section>
 
           <section className="dash-panel preflight-panel-v85 preflight-panel-v86 admin-status-panel-v87">
@@ -489,7 +511,7 @@ export default function AdminPage() {
           <section id="settings" className="dash-panel settings-panel-v80 settings-panel-v86 settings-panel-v87">
             <div className="panel-heading-row">
               <div><h2>Best-bot profile + guardrails</h2><p>These are the actual rules the cloud worker will use on the next run. Defaults match the 05/31 corrected best profile.</p></div>
-              <span className="small-pill">v9.1 guardrails</span>
+              <span className="small-pill">v9.2 guardrails</span>
             </div>
             <div className="settings-grid admin-settings-grid compact-settings-grid settings-grid-v86 settings-grid-v87">
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>
@@ -516,7 +538,7 @@ export default function AdminPage() {
               <label>Cooldown minutes<input type="number" value={control.cooldown_minutes ?? 60} onChange={(e) => update({ cooldown_minutes: Number(e.target.value) || 60 })} /></label>
               <label>Max bars to hold<input type="number" value={control.max_bars_to_hold ?? 120} onChange={(e) => update({ max_bars_to_hold: Number(e.target.value) || 120 })} /></label>
               <label>Warmup bars<input type="number" value={control.warmup_bars ?? 200} onChange={(e) => update({ warmup_bars: Number(e.target.value) || 200 })} /></label>
-              <label>Starting / tracked equity<input type="number" value={control.starting_equity} onChange={(e) => update({ starting_equity: Number(e.target.value) || 5000 })} /></label>
+              <label>Internal starting equity<input type="number" value={control.starting_equity} onChange={(e) => update({ starting_equity: Number(e.target.value) || 5000 })} /><small>Used only for Internal Paper. Alpaca Paper displays broker account equity.</small></label>
               <label>Account type<select value={control.account_type || "Cash"} onChange={(e) => update({ account_type: e.target.value, margin_multiplier: e.target.value === "Cash" ? 1 : control.margin_multiplier })}><option>Cash</option><option>Margin</option></select></label>
               <label>Buying power multiple<input type="number" step="0.5" value={control.margin_multiplier ?? 1} onChange={(e) => update({ margin_multiplier: Number(e.target.value) || 1 })} /></label>
               <label>Fractional shares<select value={control.allow_fractional_shares ? "yes" : "no"} onChange={(e) => update({ allow_fractional_shares: e.target.value === "yes" })}><option value="yes">Yes</option><option value="no">No, whole shares only</option></select></label>
@@ -535,8 +557,8 @@ export default function AdminPage() {
             </div>
             <div className="watchlist-summary-v87">
               <div><strong>{openTrades.length}</strong><span>app-open trades</span></div>
-              <div><strong>{bot?.broker?.positions?.length ?? 0}</strong><span>broker positions</span></div>
-              <div><strong>{bot?.broker?.orders?.length ?? 0}</strong><span>open broker orders</span></div>
+              <div><strong>{brokerPositionCount}</strong><span>broker positions</span></div>
+              <div><strong>{brokerMismatchCount}</strong><span>stale app records</span></div>
             </div>
             <div className="activity-list timeline-list scroll-card-v86 scroll-card-v87">
               {openTrades.length ? openTrades.map((trade) => (
@@ -556,6 +578,17 @@ export default function AdminPage() {
               <div className="row-actions admin-primary-actions">
                 <button className="danger" onClick={() => void paperKill("cancel_orders")}>Cancel broker orders</button>
                 <button className="danger" onClick={() => void paperKill("close_positions")}>Close paper positions</button>
+              </div>
+            </div>
+            <div className="execution-command-bar-v85 execution-command-bar-v87">
+              <div>
+                <span>Broker equity sync + reset</span>
+                <strong>Clean paper test state</strong>
+                <small>Use reconcile when Supabase app-open records do not match Alpaca positions. Start new test day archives old app records and syncs internal starting equity to the current Alpaca Paper account.</small>
+              </div>
+              <div className="row-actions admin-primary-actions">
+                <button className="secondary" onClick={() => void paperReset("reconcile")}>Reconcile app records</button>
+                <button className="danger" onClick={() => void paperReset("start_new_test_day")}>Start new paper test day</button>
               </div>
             </div>
           </section>
@@ -604,8 +637,8 @@ export default function AdminPage() {
             <h2>Broker + records</h2>
             <div className="rule-stack readable-stack-v87 compact-rule-stack-v88">
               <div><span>Connection</span><strong>{bot?.broker?.canSubmitOrders ? "Order route ready" : selectedRoute === "internal" ? "Not required" : "Blocked"}</strong><small>{bot?.broker?.message || bot?.broker?.error || "Broker status loading."}</small></div>
-              <div><span>Paper account</span><strong>{bot?.broker?.account?.portfolio_value ? money(Number(bot.broker.account.portfolio_value)) : "—"}</strong><small>{bot?.broker?.account?.buying_power ? `${money(Number(bot.broker.account.buying_power))} buying power` : "No broker account loaded."}</small></div>
-              <div><span>Records</span><strong>{openTrades.length} app-open · {bot?.broker?.positions?.length ?? 0} broker positions</strong><small>{bot?.broker?.orders?.length ?? 0} broker orders currently loaded.</small></div>
+              <div><span>Paper account</span><strong>{bot?.broker?.account?.portfolio_value ? money(Number(bot.broker.account.portfolio_value)) : "—"}</strong><small>{bot?.broker?.account?.buying_power ? `${money(Number(bot.broker.account.buying_power))} buying power · equity source ${useBrokerEquity ? "broker" : "app"}` : "No broker account loaded."}</small></div>
+              <div><span>Records</span><strong>{openTrades.length} app-open · {brokerPositionCount} broker positions</strong><small>{brokerMismatchCount ? `${brokerMismatchCount} stale app record(s) need reconcile.` : `${bot?.broker?.orders?.length ?? 0} broker orders currently loaded.`}</small></div>
             </div>
           </section>
 

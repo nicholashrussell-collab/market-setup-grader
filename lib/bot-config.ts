@@ -66,7 +66,7 @@ export type CloudBotSettings = {
   customSymbols?: string;
 };
 
-// v9.1: admin tracked symbols and guardrails are the source of truth for the cloud bot.
+// v9.2: admin tracked symbols and guardrails are the source of truth for the cloud bot.
 export const TRACKED_WATCHLIST_LABEL = "Tracked Symbols";
 
 export function parseSymbols(value: string, limit = 1000) {
@@ -293,7 +293,7 @@ export function defaultBotControlRow(): BotControlRow {
     max_stale_minutes: s.maxStaleMinutes,
     allow_stale_simulation: s.allowStaleSimulation,
     scan_limit: s.scanLimit,
-    notes: "Managed from v9.1 /admin. Paper-trading guardrails, tracked symbols, and saved settings are the source of truth for the scheduled cloud bot.",
+    notes: "Managed from v9.2 /admin. Paper-trading guardrails, tracked symbols, and saved settings are the source of truth for the scheduled cloud bot.",
     broker_mode: "Supabase Simulation",
     broker_paper_enabled: false,
     broker_live_enabled: false,
