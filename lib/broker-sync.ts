@@ -48,7 +48,7 @@ export async function getBrokerEquitySnapshot(mode: AlpacaBrokerMode) {
 
 export async function reconcileOpenAppTradesWithBroker(mode: AlpacaBrokerMode) {
   if (mode !== "Alpaca Paper" && mode !== "Alpaca Live") {
-    return { ok: true, mode, checked: 0, closed: 0, matched: 0, message: "Broker reconciliation skipped in internal paper mode." };
+    return { ok: true, mode, checked: 0, closed: 0, matched: 0, message: "Broker reconciliation skipped because no broker execution route is active." };
   }
 
   const [openTrades, positions] = await Promise.all([
@@ -82,10 +82,10 @@ export async function reconcileOpenAppTradesWithBroker(mode: AlpacaBrokerMode) {
         close_price: closePrice,
         result_dollars: resultDollars,
         broker_status: "broker_no_position_reconciled",
-        notes: appendNote(trade.notes, `v9.2 broker reconciliation: app showed this trade open, but the connected ${mode} account has no matching broker position. Marked closed/stale.`),
+        notes: appendNote(trade.notes, `v9.3 broker reconciliation: app showed this trade open, but the connected ${mode} account has no matching broker position. Marked closed/stale.`),
         raw: {
           reconciliation: {
-            version: "v9.2",
+            version: "v9.3",
             mode,
             reason: "no_matching_broker_position",
             reconciledAt: new Date().toISOString(),
@@ -96,7 +96,7 @@ export async function reconcileOpenAppTradesWithBroker(mode: AlpacaBrokerMode) {
   }
 
   if (closed > 0) {
-    await logBotEvent("broker_reconciliation_closed_stale_trades", `v9.2 broker reconciliation closed ${closed} stale app-open trade record(s).`, { mode, staleSymbols, brokerPositions: positions.map((p) => p.symbol) });
+    await logBotEvent("broker_reconciliation_closed_stale_trades", `v9.3 broker reconciliation closed ${closed} stale app-open trade record(s).`, { mode, staleSymbols, brokerPositions: positions.map((p) => p.symbol) });
   }
 
   return {
@@ -130,7 +130,7 @@ export async function startNewPaperTestDay(mode: AlpacaBrokerMode) {
         status: "Archived",
         close_time: now,
         broker_status: "archived_new_paper_test_day",
-        notes: appendNote(trade.notes, "v9.2 Start new paper test day: archived old app-open trade record. Alpaca Paper account is the clean source of truth."),
+        notes: appendNote(trade.notes, "v9.3 Start new paper test day: archived old app-open trade record. Alpaca Paper account is the clean source of truth."),
       }),
     });
   }
@@ -139,11 +139,11 @@ export async function startNewPaperTestDay(mode: AlpacaBrokerMode) {
     await supabaseRest("bot_control?id=eq.main", {
       method: "PATCH",
       headers: { Prefer: "return=minimal" },
-      body: JSON.stringify({ updated_at: now, starting_equity: snapshot.equity, notes: `v9.2 paper test day reset at ${now}. Broker equity source synced to Alpaca Paper equity ${snapshot.equity.toFixed(2)}.` }),
+      body: JSON.stringify({ updated_at: now, starting_equity: snapshot.equity, notes: `v9.3 paper test day reset at ${now}. Broker equity source synced to Alpaca Paper equity ${snapshot.equity.toFixed(2)}.` }),
     }).catch(() => null);
   }
 
-  await logBotEvent("paper_test_day_reset", `v9.2 new paper test day started. Archived ${archived} app-open trade record(s).`, { archived, brokerEquity: snapshot?.equity, brokerBuyingPower: snapshot?.buyingPower });
+  await logBotEvent("paper_test_day_reset", `v9.3 new paper test day started. Archived ${archived} app-open trade record(s).`, { archived, brokerEquity: snapshot?.equity, brokerBuyingPower: snapshot?.buyingPower });
 
   return {
     ok: true,

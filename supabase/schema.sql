@@ -166,7 +166,7 @@ values (
   30,
   false,
   100,
-  'v9.2 week-ready tracked-symbol defaults. Paper execution starts disarmed.'
+  'v9.3 week-ready tracked-symbol defaults. Broker-synced Paper Trading is the default route and starts disarmed.'
 )
 on conflict (id) do nothing;
 
@@ -180,12 +180,12 @@ alter table public.paper_trades add column if not exists broker_payload jsonb;
 create index if not exists paper_trades_broker_order_idx on public.paper_trades (broker_order_id);
 create index if not exists paper_trades_execution_mode_idx on public.paper_trades (execution_mode, created_at desc);
 
-alter table public.bot_control add column if not exists broker_mode text not null default 'Supabase Simulation';
-alter table public.bot_control add column if not exists broker_paper_enabled boolean not null default false;
+alter table public.bot_control add column if not exists broker_mode text not null default 'Alpaca Paper';
+alter table public.bot_control add column if not exists broker_paper_enabled boolean not null default true;
 
 update public.bot_control
-set broker_mode = coalesce(broker_mode, 'Supabase Simulation'),
-    broker_paper_enabled = coalesce(broker_paper_enabled, false)
+set broker_mode = coalesce(nullif(broker_mode, 'Supabase Simulation'), 'Alpaca Paper'),
+    broker_paper_enabled = case when broker_mode = 'Alpaca Live' then false else true end
 where id = 'main';
 
 -- v8.4 live broker readiness additions. Safe to run multiple times.
@@ -204,15 +204,15 @@ set custom_symbols = coalesce(custom_symbols, '')
 where id = 'main';
 
 
--- v9.2 tracked-symbol-only control panel. Safe to run multiple times.
+-- v9.3 tracked-symbol-only control panel. Safe to run multiple times.
 update public.bot_control
 set universe_label = 'Tracked Symbols',
     scan_limit = case when scan_limit is null or scan_limit <= 0 then 100 else scan_limit end,
     custom_symbols = case when custom_symbols is null or length(trim(custom_symbols)) = 0 then 'AAPL, MSFT, NVDA, AMZN, META, GOOGL, GOOG, AVGO, TSLA, BRK.B, LLY, JPM, V, XOM, UNH, MA, COST, NFLX, WMT, PG, JNJ, HD, ABBV, BAC, KO, PLTR, PM, CRM, ORCL, CVX, CSCO, IBM, WFC, GE, ABT, MCD, LIN, AMD, DIS, MRK, ISRG, NOW, TMO, ACN, GS, INTU, PEP, QCOM, TXN, VZ, BKNG, CAT, RTX, AXP, MS, AMGN, C, SPGI, UBER, LOW, PGR, HON, ETN, BSX, NEE, DHR, BLK, TJX, BA, SCHW, SYK, GILD, ADP, DE, MDT, PANW, COP, LMT, ADI, CB, MMC, UPS, PLD, FI, AMAT, SBUX, BMY, ELV, ANET, MU, LRCX, KLAC, SO, TMUS, ICE, MO, CME, AMT, WM, WELL, CEG, MCO, SHW, EQIX, PH, CI, CDNS, HCA, CRWD, APH, MDLZ, MMM, NKE, MSI, ORLY, TDG, SNPS, AJG, COF, ECL, ZTS, USB, ITW, CVS, EMR, WMB, PYPL, AON, MAR, NOC, CMG, GD, REGN, PNC, FTNT, ROP, TFC, CARR, APD, BK, CSX, FCX, ABNB, NSC, JCI, AZO, AEP, TRV, HLT, TGT, ADSK, URI, SLB, COR, NXPI, RSG, PWR, AFL, GM, MPC, HWM, SRE, PSX, ALL, PCAR, O, OKE, VLO, DHI, GWW, SPG, KMI, FICO, TEL, CPRT, MET, PSA, DFS, AIG, RCL, EW, CCI, MSCI, LHX, AMP, FANG, CMI, KDP, FAST, VST, KMB, KR, KVUE, PAYX, HES, BKR, PRU, PEG, CTVA, ACGL, CTSH, FIS, ODFL, VRSK, EXC, TRGP, YUM, IT, EOG, GEHC, RMD, XEL, GLW, IR, DAL, CHTR, CBOE, EA, LEN, OTIS, MNST, ED, MLM, VMC, MPWR, NUE, DXCM, WAB, IQV, ROK, HPQ, MTB, DD, HIG, GRMN, NDAQ, STZ, AVB, EFX, CBRE, EIX, BRO, FITB, CAH, MCHP, XYL, TSCO, KHC, HPE, DOW, WEC, ANSS, TROW, KEYS, NVR, DTE, FSLR, VLTO, WBD, HAL, HSY, STT, EQR, SYF, GPN, APTV, ADM, PPG, DVN, AWK, WY, WTW, LYB, DOV, WST, BR, CINF, DECK, WDC, ETR, EXR, CHD, TYL, PHM, VTR, AEE, TER, STE, WAT, ZBH, NTAP, RF, PPL, FE, ES, OMC, HUBB, SBAC, MKC, NTRS, CCL, HBAN, LDOS, INVH, GDDY, CNP, CMS, BALL, COO, LULU, DG, LH, LUV, ULTA, J, NDSN, MOH, ESS, PFG, CTAS, TXT, IEX, DPZ, SWKS, STX, AVY, MAS, EG, DRI, HOLX, BBY, CLX, TPR, K, MTCH, CF, TRMB, GEN, AES, PKG, ALLE, JBHT, TSN, ARE, AKAM, IP, EVRG, PTC, WRB, VRSN, SNA, KIM, RL, EPAM, CAG, LKQ, NWSA, UAL, INCY, BAX, FDS, POOL, UDR, ATO, HST, HII, REG, WYNN, NCLH, QRVO, BXP, TAP, BEN, DAY, SJM, FOXA, EMN, MKTX, AOS, CRL, ROL, MHK, FFIV, GNRC, CPB, AIZ, HAS, BWA, ETSY, IVZ, APA, PAYC, CZR, TECH, BIO, CTLT, GL, HSIC, MGM, CMA, MOS, SOLV, FMC, PARA, MRNA, WBA, ENPH, DVA, AAL, XRAY, VFC, NWS, FOX, PNW, ALB, SWK, CE, LW, CTRA, NI, EXPE, FRT, HRL, TFX, NEM, KMX, DOC, MAA, CPT, ZBRA, ALGN, ROST, PFE, JNPR, JBL, WSM, NET, DDOG, SNOW, MDB, TEAM, OKTA, SHOP, SQ, COIN, RBLX, PATH, U, DASH, PINS, TWLO, ZM, DOCU, AFRM, HOOD, SOFI, DKNG, RIVN, LCID, FUBO, CHWY, SE, BABA, JD, BIDU, TSM, ASML, NVO, ARM, SMCI, DELL, INTC, MRVL, ON, CRUS, ALGM, LSCC, RUN, BE, STEM, PLUG, FCEL, BLNK, VRT, TT, X, CLF, AA, SCCO, TECK, GOLD, AEM, FNV, WPM, RIO, BHP, VALE, NTR, BG, GIS' else custom_symbols end,
-    notes = coalesce(notes, 'v9.2 admin: tracked symbols list is the cloud bot watchlist.')
+    notes = coalesce(notes, 'v9.3 admin: tracked symbols list is the cloud bot watchlist.')
 where id = 'main';
 
--- v9.2 paper-trading guardrails and best-bot profile controls. Safe to run multiple times.
+-- v9.3 paper-trading guardrails and best-bot profile controls. Safe to run multiple times.
 alter table public.bot_control add column if not exists target_mode text not null default 'FixedR';
 alter table public.bot_control add column if not exists fixed_target_r numeric not null default 2.5;
 alter table public.bot_control add column if not exists atr_target_multiple numeric not null default 2;
@@ -267,5 +267,5 @@ set timeframe = '15Min',
     allow_shorts = false,
     open_start_minutes_et = 690,
     open_end_minutes_et = 960,
-    notes = coalesce(notes, 'v9.2 paper guardrails: 05/31 best profile, max one new trade per run, cooldown, broker health, and paper kill controls.')
+    notes = coalesce(notes, 'v9.3 broker-only admin: 05/31 best profile, max one new trade per run, cooldown, broker health, and paper kill controls.')
 where id = 'main';

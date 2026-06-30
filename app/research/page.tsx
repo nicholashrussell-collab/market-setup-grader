@@ -38,7 +38,7 @@ import {
 } from "@/lib/trading";
 
 const JOURNAL_KEY = "market-setup-grader-v5-3-journal";
-const STRATEGY_PRESET_KEY = "market-setup-grader-v5-3-backtest-preset";
+const STRATEGY_PRESET_KEY = "market-setup-grader-v9-3-backtest-preset";
 const TIMEFRAMES: Timeframe[] = ["1Min", "5Min", "15Min", "30Min", "1Hour"];
 const TRACKED_500_SYMBOLS = DEFAULT_TRACKED_SYMBOLS;
 type ApiDataSource = "Alpaca" | "Massive";
@@ -1953,7 +1953,7 @@ export default function Home() {
   const [btLeaderExitMode, setBtLeaderExitMode] = useState<LeaderExitMode>("PartialRunner");
   const [btMinVolumeRatio, setBtMinVolumeRatio] = useState(1);
   const [btMaxExtensionAtr, setBtMaxExtensionAtr] = useState(99);
-  const [btStartingBalance, setBtStartingBalance] = useState(5000);
+  const [btStartingBalance, setBtStartingBalance] = useState(100000);
   const [btRiskModel, setBtRiskModel] = useState<RiskModel>("Percent");
   const [btRiskPercent, setBtRiskPercent] = useState(1);
   const [btFixedRiskDollars, setBtFixedRiskDollars] = useState(100);
@@ -1974,7 +1974,7 @@ export default function Home() {
   const [basketCandidateSummary, setBasketCandidateSummary] = useState<CachedBasketReplaySummary | null>(null);
   const [basketAccountPolicy, setBasketAccountPolicy] = useState<AccountPolicy>("V72_500_ACTIVE_QUALITY_GATE");
   const [basketMaxOpenTrades, setBasketMaxOpenTrades] = useState(4);
-  const [basketMaxTotalRisk, setBasketMaxTotalRisk] = useState(4);
+  const [basketMaxTotalRisk, setBasketMaxTotalRisk] = useState(8);
   const [isBasketTesting, setIsBasketTesting] = useState(false);
   const [modelComparisons, setModelComparisons] = useState<ModelComparisonResult[]>([]);
   const [isComparingModels, setIsComparingModels] = useState(false);
@@ -2244,11 +2244,11 @@ export default function Home() {
     }
 
     if (!nextTrades.length) {
-      setStatus("All actionable live candidates were already open in the paper journal.");
+      setStatus("All actionable live candidates were already open in the research journal.");
       return;
     }
     setJournal((prev) => [...nextTrades, ...prev]);
-    setStatus(`Saved ${nextTrades.length} live watchlist candidate(s) to the paper journal. These are paper trades only, not broker orders.`);
+    setStatus(`Saved ${nextTrades.length} live watchlist candidate(s) to the research journal. These are simulated trades only, not broker orders.`);
   }, [liveCandidates, basketMaxOpenTrades, journal, timeframe, mode, noOvernightHolds]);
 
   const loadRecentCloudRuns = useCallback(async () => {
@@ -2955,6 +2955,53 @@ export default function Home() {
     if (preset.btLeaderExitMode) setBtLeaderExitMode(preset.btLeaderExitMode as LeaderExitMode);
   };
 
+  const loadAdminStylePreset = () => {
+    applyBacktestPreset({
+      btGradeProfile: "Pullback",
+      btDirectionFilter: "Long",
+      btRegimeFilter: "Off",
+      btSessionFilter: "MiddayAfternoon",
+      btSetupTypeFilter: "AdaptiveBest",
+      btStrategyEngine: "UniversalAdaptiveProV3",
+      btMinScore: 60,
+      btMaxScore: 100,
+      btMinRR: 1,
+      btCooldown: 60,
+      btMaxBars: 120,
+      btWarmup: 200,
+      btMaxOpenTrades: 4,
+      btMaxTotalRisk: 8,
+      btNoOvernight: false,
+      btTargetMode: "FixedR",
+      btFixedTargetR: 2.5,
+      btAtrTargetMultiple: 2,
+      btMinVolumeRatio: 1,
+      btMaxExtensionAtr: 99,
+      btStartingBalance: 100000,
+      btRiskModel: "Percent",
+      btRiskPercent: 1,
+      btFixedRiskDollars: 100,
+      btRealisticEnabled: true,
+      btAccountType: "Cash",
+      btAllowFractionalShares: true,
+      btAllowShorts: false,
+      btMarginMultiplier: 1,
+      btMaxPositionPct: 25,
+      btMaxDailyLossR: 0,
+      btMaxMonthlyLossR: 0,
+      btSlippageR: 0,
+      btCommissionR: 0,
+      btLeaderExitMode: "Fixed",
+      alpacaAdjustment: "split",
+    });
+    setBasketSymbols(TRACKED_500_SYMBOLS);
+    setBasketMaxOpenTrades(4);
+    setBasketMaxTotalRisk(8);
+    setBasketAccountPolicy("V72_500_ACTIVE_QUALITY_GATE");
+    setResearchMode(false);
+    setStatus("Loaded v9.3 admin-style backtest profile. Research Lab uses historical candles only and cannot place broker orders or change Admin settings.");
+  };
+
   const loadCandidatePreset = () => {
     applyBacktestPreset({
       btGradeProfile: "Pullback",
@@ -3210,29 +3257,52 @@ export default function Home() {
   };
 
   return (
-    <main>
-      <header className="hero">
+    <main className="research-control-room">
+      <header className="hero admin-header-v85 admin-header-v87">
         <div>
-          <div className="eyebrow">Research lab / paper-trading prep</div>
-          <h1>Market Setup Grader v7.3</h1>
+          <div className="eyebrow">Public research lab · backtest-only</div>
+          <h1>Backtest Control Room v9.3</h1>
           <p>
-            v7.2 keeps the active-only quality gate and adds a tracked 500-symbol stress-test universe. Use 100 symbols for paper-style stability and 500 symbols for research/cloud-readiness testing.
+            Test Admin-style settings against historical candles. This page uses Alpaca/Massive/CSV market data for simulation only; it cannot place broker orders and cannot change the live Admin console.
           </p>
         </div>
         <div className="mode-card">
-          <label>Data mode</label>
+          <label>Backtest data handling</label>
           <select value={mode} onChange={(e) => setMode(e.target.value as AppMode)}>
-            <option value="Research">Research: delayed/stale data allowed</option>
-            <option value="Live">Live: stale auto-saves blocked</option>
+            <option value="Research">Research: allow historical/stale candles</option>
+            <option value="Live">Strict: block stale auto-saves</option>
           </select>
           <label className="mt-12">View</label>
           <select value={researchMode ? "research" : "simple"} onChange={(e) => setResearchMode(e.target.value === "research")}>
-            <option value="simple">Simple: main account result</option>
-            <option value="research">Research: full diagnostics</option>
+            <option value="simple">Backtester: main results</option>
+            <option value="research">Advanced diagnostics</option>
           </select>
-          <p className="muted tiny">This app does not place real broker orders. Research View keeps the older grader, CSV, journal, model A/B, and deep diagnostic panels available.</p>
+          <p className="muted tiny">Broker execution is disabled here. Research Lab is for historical simulation, score-bucket proof, and profile testing only.</p>
         </div>
       </header>
+
+      <section className="viewer-metrics-grid secondary-metrics admin-top-metrics admin-top-metrics-v87">
+        <div className="dash-tile good"><span>Purpose</span><strong>Backtest only</strong><small>Research tests history; Admin controls broker execution.</small></div>
+        <div className="dash-tile info"><span>Data source</span><strong>{btDataSource}</strong><small>Historical candles, not broker account positions.</small></div>
+        <div className="dash-tile info"><span>Profile</span><strong>{btStrategyEngine}</strong><small>{btSessionFilter} · {btDirectionFilter} · {btFixedTargetR}R target</small></div>
+        <div className="dash-tile warn"><span>Broker orders</span><strong>Disabled</strong><small>No Alpaca Paper or Live orders from this page.</small></div>
+      </section>
+
+      <section className="panel">
+        <div className="panel-heading-row">
+          <div>
+            <h2>Backtest command</h2>
+            <p>Use this like the Admin console, but for historical testing. Load the broker-style profile, choose dates/watchlist, then run a simulation.</p>
+          </div>
+          <span className="small-pill">Public · simulation only</span>
+        </div>
+        <div className="actions wrap-actions">
+          <button onClick={loadAdminStylePreset}>Load admin-style paper profile</button>
+          <button className="secondary" onClick={loadSuperWideFiveHundredBasket}>Load 500-symbol research list</button>
+          <button className="secondary" onClick={() => setResearchMode(!researchMode)}>{researchMode ? "Hide diagnostics" : "Show diagnostics"}</button>
+        </div>
+        <p className="muted tiny">No “apply to Admin” button exists here on purpose. This page is safe to share because it cannot alter cloud bot settings.</p>
+      </section>
 
       {researchMode ? <>
       <section className="panel grid two">
@@ -3350,7 +3420,7 @@ export default function Home() {
           <div className="actions">
             <button className="secondary" onClick={() => void checkOpenTrades()}>Check Open Trades Now</button>
           </div>
-          <p className="muted small">Research Mode lets delayed data save paper trades. Live Mode blocks stale auto-saves. No overnight holds prevents next-day bars from deciding same-day trades.</p>
+          <p className="muted small">Research mode allows historical candles. Strict mode blocks stale auto-saves. No overnight holds prevents next-day bars from deciding same-day trades.</p>
         </div>
       </section>
 
@@ -3388,7 +3458,7 @@ export default function Home() {
               <ul>{grade.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
               {grade.warnings.length ? <><h4>Warnings</h4><ul>{grade.warnings.map((w) => <li key={w}>{w}</li>)}</ul></> : null}
               <div className="actions">
-                <button onClick={saveManualTrade}>Save to Paper Journal</button>
+                <button onClick={saveManualTrade}>Save to Research Journal</button>
               </div>
             </div>
           ) : <div className="chart-empty">No grade yet. Fetch candles or grade CSV data.</div>}
@@ -3407,7 +3477,7 @@ export default function Home() {
         <p className="muted">
           {researchMode
             ? "This runs the same grading logic over past candles. Use Alpaca, Massive, or uploaded CSV data. Massive is useful for recent multi-year intraday backtests; CSV mode is for older vendor files like 1999–2013."
-            : "Clean mode focuses on the realistic universal account scanner. Turn on Research View for CSV tools, single-symbol grading, model A/B tests, risk sweep tables, rejected-trade diagnostics, and the paper journal."}
+            : "Backtester mode focuses on the realistic account replay. Advanced diagnostics include CSV tools, single-symbol grading, model A/B tests, risk sweeps, rejected-trade diagnostics, and the local research journal."}
         </p>
         {researchMode ? <>
         <div className="actions wrap-actions">
@@ -3829,7 +3899,7 @@ export default function Home() {
 
           <div className="panel-lite live-proof-box">
             <h4>Live watchlist scanner</h4>
-            <p className="muted small">Runs the same current setup across the selected symbols using latest candles. This is for paper/live observation only; it does not place broker orders.</p>
+            <p className="muted small">Runs the same current setup across the selected symbols using latest candles. This is for historical/research observation only; it does not place broker orders.</p>
             <div className="grid three">
               <label>
                 Live scanner
@@ -3849,7 +3919,7 @@ export default function Home() {
             </div>
             <div className="row-actions">
               <button className="primary small" onClick={() => void runLiveBasketScan("manual")} disabled={isLiveBasketScanning}>{isLiveBasketScanning ? "Scanning..." : "Scan Live Watchlist Now"}</button>
-              <button className="secondary small" onClick={saveActionableLiveCandidates} disabled={!liveCandidates.some((r) => r.actionable)}>Save actionable to paper journal</button>
+              <button className="secondary small" onClick={saveActionableLiveCandidates} disabled={!liveCandidates.some((r) => r.actionable)}>Save actionable to research journal</button>
               <button className="secondary small" onClick={() => void checkCloudStatus()} disabled={isCheckingCloud}>{isCheckingCloud ? "Checking cloud..." : "Check cloud DB"}</button>
               <button className="secondary small" onClick={() => void saveLiveScanToCloud()} disabled={!liveCandidates.length || isSavingCloudScan}>{isSavingCloudScan ? "Saving cloud..." : "Save scan to cloud DB"}</button>
             </div>
@@ -3900,7 +3970,7 @@ export default function Home() {
                 </table>
               </div>
             ) : null}
-            <p className="muted tiny">v7.3 can save manual live-scan results to Supabase. This is still paper/signals only; the later Railway worker will run scans automatically while your laptop is off.</p>
+            <p className="muted tiny">v9.3 Research Lab can save simulated scan results for review. Cloud execution remains controlled only from Admin.</p>
           </div>
           {researchMode && basketCandidateSummary ? <CachedCandidateSetCard summary={basketCandidateSummary} /> : null}
           {researchMode && modelComparisons.length ? <ModelComparisonTable rows={modelComparisons} /> : null}
@@ -4069,7 +4139,7 @@ export default function Home() {
       </section>
 
       {researchMode ? <section className="panel">
-        <h2>7. Paper Journal</h2>
+        <h2>7. Research Journal</h2>
         <div className="mini-grid wide">
           <StatCard label="Open" value={journalStats.open} />
           <StatCard label="Wins" value={journalStats.wins} />
@@ -4638,7 +4708,7 @@ function TradeWindowAuditPanel({ summary, researchMode }: { summary: BasketPortf
   return (
     <div className="breakdown-card full-width">
       <h4>Paper-live readiness notes</h4>
-      <p className="muted tiny">The main benchmark is active-only. Tracked 100 is the paper-style benchmark; Tracked 500 is a research/cloud-readiness stress test. The 100-trade window audit remains as a stress test, but paper testing should focus on the watchlist scanner and paper journal.</p>
+      <p className="muted tiny">The main benchmark is active-only. Tracked 100 is the paper-style benchmark; Tracked 500 is a research/cloud-readiness stress test. The 100-trade window audit remains as a stress test, but paper testing should focus on the watchlist scanner and research journal.</p>
       <div className="mini-grid wide">
         {latest ? <>
           <StatCard label="Latest 100 total R" value={`${latest.totalR}R`} helper={latest.note} />

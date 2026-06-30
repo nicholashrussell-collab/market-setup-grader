@@ -168,16 +168,16 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   const signals = latest?.signals || [];
   const latestScan = latest?.scan || scans[0] || null;
   const lastBotEvent = bot?.lastEvent || null;
-  const startingEquity = Number(bot?.settings?.startingEquity || 5000);
+  const startingEquity = Number(bot?.settings?.startingEquity || 100000);
   const realizedPnl = closedTrades.reduce((sum, trade) => sum + Number(trade.result_dollars || 0), 0);
   const unrealizedPnl = openTrades.reduce((sum, trade) => sum + Number(trade.unrealized_pnl || 0), 0);
   const appLedgerEquity = startingEquity + realizedPnl + unrealizedPnl;
   const brokerAccountEquity = Number(bot?.broker?.account?.equity || bot?.broker?.account?.portfolio_value || 0);
-  const useBrokerEquity = Boolean(bot?.settings?.brokerPaperEnabled && brokerAccountEquity > 0);
+  const useBrokerEquity = brokerAccountEquity > 0;
   const paperEquity = useBrokerEquity ? brokerAccountEquity : appLedgerEquity;
   const returnPct = startingEquity ? ((paperEquity - startingEquity) / startingEquity) * 100 : 0;
   const brokerPositionCount = bot?.broker?.positions?.length ?? 0;
-  const brokerMismatchCount = bot?.settings?.brokerPaperEnabled ? Math.max(0, openTrades.length - brokerPositionCount) : 0;
+  const brokerMismatchCount = Math.max(0, openTrades.length - brokerPositionCount);
   const selectedSignal = signals.find((s) => s.symbol === selectedSymbol);
   const selectedOpenTrade = openTrades.find((trade) => normalizeSymbol(trade.symbol) === selectedSymbol);
   const selectedOverlay = tradeOverlay(selectedOpenTrade) || signalOverlay(selectedSignal);
@@ -277,7 +277,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
       </section>
 
       <section className="viewer-metrics-grid secondary-metrics">
-        <StatTile label="Tracked equity" value={money(paperEquity)} helper={useBrokerEquity ? `Alpaca Paper account · app ledger ${money(appLedgerEquity)}` : `${percent(returnPct)} total · ${money(realizedPnl)} realized · ${money(unrealizedPnl)} open`} tone={useBrokerEquity || paperEquity >= startingEquity ? "good" : "bad"} />
+        <StatTile label="Tracked equity" value={money(paperEquity)} helper={useBrokerEquity ? "Broker account equity is source of truth" : "Waiting for broker equity"} tone={useBrokerEquity ? "good" : "warn"} />
         <StatTile label="Open cloud trades" value={openTrades.length} helper={brokerMismatchCount ? `${brokerMismatchCount} stale app record(s) need reconcile in admin` : `${closedTrades.length} recent closed trades loaded`} tone={brokerMismatchCount ? "warn" : undefined} />
         <StatTile label="Latest bot run" value={lastBotEvent ? formatDateTime(lastBotEvent.created_at) : "Waiting"} helper={lastBotEvent?.event_type || "No event yet"} />
         <StatTile label="Latest saved scan" value={`${scanStats.actionable}/${scanStats.total} actionable`} helper={`${latestScanTime} · ${latestScanUniverse}`} tone={scanStats.actionable > 0 ? "good" : "warn"} />
@@ -310,12 +310,12 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
   const positionsPanel = (
     <section className="dashboard-page-stack">
       <section className="viewer-metrics-grid secondary-metrics">
-        <StatTile label="Tracked equity" value={money(paperEquity)} helper={useBrokerEquity ? `Alpaca Paper account · app ledger ${money(appLedgerEquity)}` : `${percent(returnPct)} total return from the bot trade tracker`} tone={useBrokerEquity || paperEquity >= startingEquity ? "good" : "bad"} />
+        <StatTile label="Tracked equity" value={money(paperEquity)} helper={useBrokerEquity ? "Broker account equity is source of truth" : "Waiting for broker equity"} tone={useBrokerEquity ? "good" : "warn"} />
         <StatTile label="Open trades" value={openTrades.length} helper="Server-side positions stored in Supabase" />
         <StatTile label="Realized P/L" value={money(realizedPnl)} helper={`${closedTrades.length} recent closed trades loaded`} tone={realizedPnl >= 0 ? "good" : "bad"} />
         <StatTile label="Unrealized P/L" value={money(unrealizedPnl)} helper="Open trade mark-to-market" tone={unrealizedPnl >= 0 ? "good" : "bad"} />
       </section>
-      <section className="dash-panel"><div className="panel-heading-row"><div><h2>Open bot trade records</h2><p>These are server-side trade records from simulation, Alpaca Paper, or locked/unlocked broker modes.</p></div><span className="small-pill">{openTrades.length}</span></div><div className="position-list page-position-list">{openTrades.length ? openTrades.map((p) => (<div key={p.id} className={`position-row open ${normalizeSymbol(p.symbol) === selectedSymbol ? "selected-row" : ""}`} onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · entry {formatPrice(p.entry)} · stop {formatPrice(p.stop)} · target {formatPrice(p.target)}</span><small>Opened {formatDateTime(p.created_at)} · click to pin this symbol on the Chart Desk</small></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div></div>)) : <p className="muted">No open bot trade records yet.</p>}</div></section>
+      <section className="dash-panel"><div className="panel-heading-row"><div><h2>Open bot trade records</h2><p>These are server-side app records for broker-synced Paper Trading and locked Real Money modes.</p></div><span className="small-pill">{openTrades.length}</span></div><div className="position-list page-position-list">{openTrades.length ? openTrades.map((p) => (<div key={p.id} className={`position-row open ${normalizeSymbol(p.symbol) === selectedSymbol ? "selected-row" : ""}`} onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · entry {formatPrice(p.entry)} · stop {formatPrice(p.stop)} · target {formatPrice(p.target)}</span><small>Opened {formatDateTime(p.created_at)} · click to pin this symbol on the Chart Desk</small></div><div><strong>{money(Number(p.unrealized_pnl || 0))}</strong><span>{formatPrice(p.last_price)} last</span></div></div>)) : <p className="muted">No open bot trade records yet.</p>}</div></section>
       <section className="dash-panel"><div className="panel-heading-row"><div><h2>Recent closed trades</h2><p>Closed bot trade outcomes loaded from Supabase.</p></div><span className="small-pill">{closedTrades.length}</span></div><div className="position-list page-position-list">{closedTrades.length ? closedTrades.slice(0, 30).map((p) => (<div key={p.id} className={`position-row closed ${normalizeSymbol(p.symbol) === selectedSymbol ? "selected-row" : ""}`} onClick={() => void loadChart(p.symbol)}><div><strong>{p.symbol}</strong><span>{p.bias} · {p.notes || "closed"}</span><small>Click to pin this symbol on the Chart Desk</small></div><div><strong>{money(Number(p.result_dollars || 0))}</strong><span>{p.result_r !== undefined ? `${p.result_r}R` : "closed"}</span></div></div>)) : <p className="muted">No closed bot record trades loaded.</p>}</div></section>
     </section>
   );
@@ -333,7 +333,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
       {error ? <div className="error-box">{error}</div> : <div className="execution-note upgraded-note">{status} Latest bot run and latest saved scan are separate. If the market is closed, cron can still run while the saved scan remains older.</div>}
       <div className="overview-grid-v81">
         {chartPanel}
-        <section className="dash-panel system-snapshot-card"><h2>System snapshot</h2><div className="rule-stack"><div><span>Mode</span><strong>Autonomous cloud bot</strong><small>Cron runs every 15 minutes; viewer is read-only.</small></div><div><span>Active rules</span><strong>{currentScanLimit} tracked symbols</strong><small>{currentTimeframe} · scores {bot?.settings?.minScore ?? 80}-{bot?.settings?.maxScore ?? 89}</small></div><div><span>Risk controls</span><strong>{bot?.settings?.riskPct || 1}% per trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1} · stale guard {bot?.settings?.maxStaleMinutes || 30} min</small></div><div><span>Research basis</span><strong>Active-only pullback/reclaim</strong><small>Execution mode: {bot?.settings?.brokerMode || "Supabase Simulation"}. Broker route follows the saved admin execution mode.</small></div></div></section>
+        <section className="dash-panel system-snapshot-card"><h2>System snapshot</h2><div className="rule-stack"><div><span>Mode</span><strong>Autonomous cloud bot</strong><small>Cron runs every 15 minutes; viewer is read-only.</small></div><div><span>Active rules</span><strong>{currentScanLimit} tracked symbols</strong><small>{currentTimeframe} · scores {bot?.settings?.minScore ?? 80}-{bot?.settings?.maxScore ?? 89}</small></div><div><span>Risk controls</span><strong>{bot?.settings?.riskPct || 1}% per trade</strong><small>{bot?.settings?.maxOpenPositions || 4} max open · min R/R {bot?.settings?.minRR || 1} · stale guard {bot?.settings?.maxStaleMinutes || 30} min</small></div><div><span>Research basis</span><strong>Active-only pullback/reclaim</strong><small>Execution mode: {bot?.settings?.brokerMode || "Alpaca Paper"}. Broker route follows the saved admin execution mode.</small></div></div></section>
       </div>
       {signalsPanel}
     </section>
@@ -367,7 +367,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
         <section className="viewer-main-area page-viewer-main">
           <header className="viewer-topbar page-header-v81">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v9.2</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
+              <div className="viewer-version-row"><span className="eyebrow">Autonomous trading viewer</span><StatusBadge tone="info">v9.3</StatusBadge><StatusBadge tone="good">Read-only</StatusBadge></div>
               <h1>{activeLabel}</h1>
               <p>{activeView === "overview" ? "A professional monitoring desk for the scheduled cloud bot. The public site is view-only; the private admin page controls settings and execution." : "This page is part of the read-only viewer. Use the left navigation to move between dashboard sections without changing the bot."}</p>
             </div>
@@ -405,7 +405,7 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
             <h2>Bot status</h2>
             <div className="rail-stack-v88">
               <RailRow label="Engine" value={botEngineRunning ? "Running" : "Paused"} helper={tradeArmed ? "Execution armed from admin." : "Execution disarmed from admin."} tone={botEngineRunning ? "good" : "warn"} />
-              <RailRow label="Mode" value={bot?.settings?.brokerMode || "Supabase Simulation"} helper={bot?.settings?.brokerLiveEnabled ? "Live route selected; safety gates still apply." : bot?.settings?.brokerPaperEnabled ? "Alpaca Paper route selected." : "Internal paper records only."} tone={bot?.settings?.brokerLiveEnabled ? "bad" : "good"} />
+              <RailRow label="Mode" value={bot?.settings?.brokerLiveEnabled ? "Real Money" : "Paper Trading"} helper={bot?.settings?.brokerLiveEnabled ? "Live route selected; safety gates still apply." : "Alpaca Paper broker route selected."} tone={bot?.settings?.brokerLiveEnabled ? "bad" : "good"} />
               <RailRow label="Watchlist" value={`${currentScanLimit} tracked`} helper={`${currentTimeframe} · scan limit controlled in admin.`} tone="info" />
               <RailRow label="Last run" value={lastBotEvent ? formatDateTime(lastBotEvent.created_at) : "Waiting"} helper={lastBotEvent?.message || "No bot event loaded yet."} tone={lastBotEvent?.event_type?.includes("error") ? "bad" : "info"} />
             </div>
@@ -414,9 +414,9 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
           <section className="dash-panel rail-card-v88">
             <h2>Broker + records</h2>
             <div className="rail-stack-v88">
-              <RailRow label="Broker" value={bot?.broker?.canSubmitOrders ? "Order route ready" : bot?.settings?.brokerPaperEnabled ? "Checking paper route" : "Not required"} helper={bot?.broker?.message || bot?.broker?.error || "Broker status loads from the cloud API."} tone={bot?.broker?.canSubmitOrders ? "good" : bot?.settings?.brokerPaperEnabled ? "warn" : "info"} />
+              <RailRow label="Broker" value={bot?.broker?.canSubmitOrders ? "Order route ready" : "Checking broker route"} helper={bot?.broker?.message || bot?.broker?.error || "Broker status loads from the cloud API."} tone={bot?.broker?.canSubmitOrders ? "good" : "warn"} />
               <RailRow label="Open records" value={openTrades.length} helper={brokerMismatchCount ? `${brokerMismatchCount} stale app record(s) need admin reconcile.` : `${closedTrades.length} recent closed records loaded.`} tone={brokerMismatchCount ? "warn" : openTrades.length ? "good" : "neutral"} />
-              <RailRow label="Tracked equity" value={money(paperEquity)} helper={useBrokerEquity ? "Equity source: Alpaca Paper account." : `${percent(returnPct)} total · ${money(realizedPnl)} realized.`} tone={useBrokerEquity || paperEquity >= startingEquity ? "good" : "bad"} />
+              <RailRow label="Tracked equity" value={money(paperEquity)} helper={useBrokerEquity ? "Equity source: broker account." : "Waiting for broker equity."} tone={useBrokerEquity ? "good" : "warn"} />
             </div>
           </section>
 

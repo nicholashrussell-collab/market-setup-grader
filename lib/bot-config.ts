@@ -14,7 +14,7 @@ import { DEFAULT_TRACKED_SYMBOLS, parseTrackedSymbols } from "@/lib/watchlist";
 
 export type ApiDataSource = "Alpaca" | "Massive";
 
-export type BrokerExecutionMode = "Supabase Simulation" | "Alpaca Paper" | "Alpaca Live" | "Real Locked";
+export type BrokerExecutionMode = "Alpaca Paper" | "Alpaca Live" | "Real Locked" | "Supabase Simulation";
 export type RealisticAccountType = "Cash" | "Margin";
 
 export type CloudBotSettings = {
@@ -66,7 +66,7 @@ export type CloudBotSettings = {
   customSymbols?: string;
 };
 
-// v9.2: admin tracked symbols and guardrails are the source of truth for the cloud bot.
+// v9.3: admin tracked symbols and guardrails are the source of truth for the cloud bot.
 export const TRACKED_WATCHLIST_LABEL = "Tracked Symbols";
 
 export function parseSymbols(value: string, limit = 1000) {
@@ -120,7 +120,7 @@ export function getCloudBotSettings(): CloudBotSettings {
     minRR: envNumber("BOT_MIN_RR", 1),
     maxStaleMinutes: envNumber("BOT_MAX_STALE_MINUTES", 30),
     maxOpenPositions: envNumber("BOT_MAX_OPEN_POSITIONS", 4),
-    startingEquity: envNumber("BOT_STARTING_EQUITY", 5000),
+    startingEquity: envNumber("BOT_STARTING_EQUITY", 100000),
     riskPct: envNumber("BOT_RISK_PCT", 1),
     maxPositionPct: envNumber("BOT_MAX_POSITION_PCT", 25),
     targetMode: (process.env.BOT_TARGET_MODE as TargetMode) || "FixedR",
@@ -151,8 +151,8 @@ export function getCloudBotSettings(): CloudBotSettings {
     longOnly: directionFilter === "Long" || envBoolean("BOT_LONG_ONLY", true),
     allowStaleSimulation: envBoolean("BOT_ALLOW_STALE_SIMULATION", false),
     scanLimit,
-    brokerMode: (process.env.BOT_BROKER_MODE as BrokerExecutionMode) || "Supabase Simulation",
-    brokerPaperEnabled: envBoolean("BOT_BROKER_PAPER_ENABLED", false),
+    brokerMode: ((process.env.BOT_BROKER_MODE as BrokerExecutionMode) || "Alpaca Paper"),
+    brokerPaperEnabled: envBoolean("BOT_BROKER_PAPER_ENABLED", true),
     brokerLiveEnabled: envBoolean("BOT_BROKER_LIVE_ENABLED", false),
     customSymbols: process.env.BOT_SYMBOLS || DEFAULT_TRACKED_SYMBOLS,
   };
@@ -230,8 +230,9 @@ function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): Cl
     maxStaleMinutes: num(row.max_stale_minutes, base.maxStaleMinutes),
     allowStaleSimulation: bool(row.allow_stale_simulation, base.allowStaleSimulation),
     scanLimit: Number.isFinite(scanLimit) ? scanLimit : base.scanLimit,
-    brokerMode: (row.broker_mode as BrokerExecutionMode) || base.brokerMode,
-    brokerPaperEnabled: bool(row.broker_paper_enabled, base.brokerPaperEnabled),
+    // v9.3 removes Internal Paper from Admin. Legacy Supabase Simulation rows are treated as Alpaca Paper.
+    brokerMode: row.broker_mode === "Alpaca Live" || row.broker_live_enabled ? "Alpaca Live" : "Alpaca Paper",
+    brokerPaperEnabled: !(row.broker_mode === "Alpaca Live" || row.broker_live_enabled),
     brokerLiveEnabled: bool(row.broker_live_enabled, base.brokerLiveEnabled),
     targetMode: (row.target_mode as TargetMode) || base.targetMode,
     fixedTargetR: num(row.fixed_target_r, base.fixedTargetR),
@@ -293,9 +294,9 @@ export function defaultBotControlRow(): BotControlRow {
     max_stale_minutes: s.maxStaleMinutes,
     allow_stale_simulation: s.allowStaleSimulation,
     scan_limit: s.scanLimit,
-    notes: "Managed from v9.2 /admin. Paper-trading guardrails, tracked symbols, and saved settings are the source of truth for the scheduled cloud bot.",
-    broker_mode: "Supabase Simulation",
-    broker_paper_enabled: false,
+    notes: "Managed from v9.3 /admin. Broker-synced Paper Trading is the default execution route. Research Lab handles historical simulation/backtesting only.",
+    broker_mode: "Alpaca Paper",
+    broker_paper_enabled: true,
     broker_live_enabled: false,
     custom_symbols: s.customSymbols || DEFAULT_TRACKED_SYMBOLS,
     target_mode: s.targetMode,

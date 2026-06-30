@@ -71,7 +71,7 @@ type BotStatus = {
   broker?: BrokerStatus;
 };
 
-type RouteKey = "internal" | "paper" | "live";
+type RouteKey = "paper" | "live";
 type Tone = "good" | "warn" | "bad" | "info";
 
 const defaultControl: BotControl = {
@@ -89,9 +89,9 @@ const defaultControl: BotControl = {
   max_stale_minutes: 30,
   allow_stale_simulation: false,
   scan_limit: 100,
-  notes: "Managed from v9.2 admin. Paper guardrails, best-profile settings, and the tracked-symbol list are the source of truth for the scheduled cloud bot.",
-  broker_mode: "Supabase Simulation",
-  broker_paper_enabled: false,
+  notes: "Managed from v9.3 admin. Broker-synced Paper Trading is the default route. Research Lab handles historical simulation/backtesting only.",
+  broker_mode: "Alpaca Paper",
+  broker_paper_enabled: true,
   broker_live_enabled: false,
   custom_symbols: DEFAULT_TRACKED_SYMBOLS,
   target_mode: "FixedR",
@@ -138,20 +138,17 @@ async function readApiJson(res: Response) {
 
 function routeFromControl(control: BotControl): RouteKey {
   if (control.broker_mode === "Alpaca Live" || control.broker_live_enabled) return "live";
-  if (control.broker_mode === "Alpaca Paper" || control.broker_paper_enabled) return "paper";
-  return "internal";
+  return "paper";
 }
 
 function routePatch(key: RouteKey): Partial<BotControl> {
-  if (key === "paper") return { broker_mode: "Alpaca Paper", broker_paper_enabled: true, broker_live_enabled: false };
   if (key === "live") return { broker_mode: "Alpaca Live", broker_paper_enabled: false, broker_live_enabled: true };
-  return { broker_mode: "Supabase Simulation", broker_paper_enabled: false, broker_live_enabled: false };
+  return { broker_mode: "Alpaca Paper", broker_paper_enabled: true, broker_live_enabled: false };
 }
 
 function routeLabel(key: RouteKey) {
-  if (key === "paper") return "Alpaca Paper";
-  if (key === "live") return "Alpaca Real Money";
-  return "Internal Paper";
+  if (key === "live") return "Real Money";
+  return "Paper Trading";
 }
 
 function StatusDot({ tone = "info" }: { tone?: Tone }) {
@@ -231,14 +228,14 @@ export default function AdminPage() {
   const unrealizedPnl = openTrades.reduce((sum, trade) => sum + Number(trade.unrealized_pnl || 0), 0);
   const brokerAccountEquity = Number(bot?.broker?.account?.equity || bot?.broker?.account?.portfolio_value || 0);
   const appLedgerEquity = Number(control.starting_equity || 5000) + realizedPnl + unrealizedPnl;
-  const useBrokerEquity = selectedRoute === "paper" && brokerAccountEquity > 0;
+  const useBrokerEquity = brokerAccountEquity > 0;
   const trackedEquity = useBrokerEquity ? brokerAccountEquity : appLedgerEquity;
-  const equitySourceLabel = useBrokerEquity ? "Alpaca Paper account" : "App/Supabase ledger";
+  const equitySourceLabel = useBrokerEquity ? (selectedRoute === "live" ? "Alpaca Live account" : "Alpaca Paper account") : "Broker account not loaded";
   const brokerPositionCount = bot?.broker?.positions?.length ?? 0;
-  const brokerMismatchCount = selectedRoute === "paper" ? Math.max(0, openTrades.length - brokerPositionCount) : 0;
+  const brokerMismatchCount = Math.max(0, openTrades.length - brokerPositionCount);
   const canTrade = control.bot_enabled && control.paper_trading_enabled;
-  const brokerMode = control.broker_mode || "Supabase Simulation";
-  const brokerOk = selectedRoute === "internal" || Boolean(bot?.broker?.canSubmitOrders);
+  const brokerMode = selectedRoute === "live" ? "Alpaca Live" : "Alpaca Paper";
+  const brokerOk = Boolean(bot?.broker?.canSubmitOrders);
   const marketOpen = Boolean(bot?.market?.isOpen);
   const lastAction = prettyEvent(bot?.lastEvent);
 
@@ -263,6 +260,11 @@ export default function AdminPage() {
     const controlData = await readApiJson(controlRes);
     if (controlRes.ok && controlData.control) {
       const merged = { ...defaultControl, ...controlData.control, universe_label: "Tracked Symbols" };
+      if (merged.broker_mode !== "Alpaca Live" && !merged.broker_live_enabled) {
+        merged.broker_mode = "Alpaca Paper";
+        merged.broker_paper_enabled = true;
+        merged.broker_live_enabled = false;
+      }
       if (!(merged.custom_symbols || "").trim()) merged.custom_symbols = botData?.settings?.customSymbols || DEFAULT_TRACKED_SYMBOLS;
       setControl(merged);
     }
@@ -302,7 +304,10 @@ export default function AdminPage() {
     setSaving(true);
     setStatus("Saving cloud bot settings...");
     try {
-      const payload = { ...nextControl, universe_label: "Tracked Symbols", custom_symbols: (nextControl.custom_symbols || trackedText).trim() };
+      const normalizedRoute = nextControl.broker_mode === "Alpaca Live" || nextControl.broker_live_enabled
+        ? { broker_mode: "Alpaca Live", broker_paper_enabled: false, broker_live_enabled: true }
+        : { broker_mode: "Alpaca Paper", broker_paper_enabled: true, broker_live_enabled: false };
+      const payload = { ...nextControl, ...normalizedRoute, universe_label: "Tracked Symbols", custom_symbols: (nextControl.custom_symbols || trackedText).trim() };
       const res = await fetch("/api/admin/bot-control", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await readApiJson(res);
       if (!res.ok || !data.ok) throw new Error(data.schemaHint || data.message || "Could not save settings.");
@@ -386,9 +391,9 @@ export default function AdminPage() {
     { title: "Engine", status: control.bot_enabled ? "Running" : "Paused", tone: control.bot_enabled ? "good" as Tone : "warn" as Tone, detail: control.bot_enabled ? "Vercel cron may run every 15 minutes." : "Cron route is paused from admin." },
     { title: "Execution", status: canTrade ? "Armed" : "Disarmed", tone: canTrade ? "good" as Tone : "warn" as Tone, detail: canTrade ? "The bot may open paper trades when all gates pass." : "The bot can scan/log, but cannot open new trades." },
     { title: "Market", status: marketOpen ? "Open" : "Closed", tone: marketOpen ? "good" as Tone : "warn" as Tone, detail: bot?.market?.reason || "Market status loads from the bot guard." },
-    { title: "Broker", status: brokerOk ? "Ready" : "Blocked", tone: brokerOk ? "good" as Tone : "bad" as Tone, detail: selectedRoute === "internal" ? "Internal paper does not need broker credentials." : bot?.broker?.message || bot?.broker?.error || "Broker route checking." },
+    { title: "Broker", status: brokerOk ? "Ready" : "Blocked", tone: brokerOk ? "good" as Tone : "bad" as Tone, detail: bot?.broker?.message || bot?.broker?.error || "Broker route checking." },
     { title: "Watchlist", status: `${trackedSymbols.length} saved`, tone: activeSymbols.length ? "good" as Tone : "bad" as Tone, detail: `${activeSymbols.length} scanned per run from the editable tracked list.` },
-  ], [bot, control.bot_enabled, canTrade, marketOpen, brokerOk, selectedRoute, trackedSymbols.length, activeSymbols.length]);
+  ], [bot, control.bot_enabled, canTrade, marketOpen, brokerOk, trackedSymbols.length, activeSymbols.length]);
 
   if (checkingSession) {
     return <main className="dash-shell admin-login-shell"><section className="dash-panel login-card"><h1>Checking admin session...</h1></section></main>;
@@ -434,7 +439,7 @@ export default function AdminPage() {
             <StatusDot tone={control.bot_enabled ? "good" : "warn"} />
             <div>
               <strong>{control.bot_enabled ? "Engine running" : "Engine paused"}</strong>
-              <small>{routeLabel(selectedRoute)} · {canTrade ? "armed" : "disarmed"}</small>
+              <small>{routeLabel(selectedRoute)} · broker-synced · {canTrade ? "armed" : "disarmed"}</small>
             </div>
           </div>
           <div className="sidebar-links">
@@ -447,9 +452,9 @@ export default function AdminPage() {
         <section className="viewer-main-area admin-main-v86 admin-main-v87">
           <header className="viewer-topbar page-header-v81 admin-header-v85 admin-header-v86 admin-header-v87">
             <div>
-              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.2.2</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Paper-first"}</StatusPill></div>
-              <h1>Paper Trading Guardrails</h1>
-              <p>Set what the cloud bot is allowed to do. The viewer shows what happened. Vercel Cron runs the bot in the background; your laptop does not need to stay open.</p>
+              <div className="viewer-version-row"><span className="eyebrow">Private control room</span><StatusPill tone="info">v9.3</StatusPill><StatusPill tone={selectedRoute === "live" ? "bad" : "good"}>{selectedRoute === "live" ? "Live locked" : "Broker-synced"}</StatusPill></div>
+              <h1>Broker-Synced Trading Control</h1>
+              <p>Admin controls broker-connected Paper Trading now and locked Real Money later. Research Lab handles historical backtesting only.</p>
             </div>
             <div className="topbar-rule-card admin-current-state-card-v87">
               <span>Current operating state</span>
@@ -460,10 +465,10 @@ export default function AdminPage() {
 
           <section id="status" className="viewer-metrics-grid secondary-metrics admin-top-metrics admin-top-metrics-v87">
             <StatTile label="Bot" value={control.bot_enabled ? "Running" : "Paused"} helper={canTrade ? "Execution armed" : "Scan/log only"} tone={control.bot_enabled ? "good" : "warn"} />
-            <StatTile label="Mode" value={routeLabel(selectedRoute)} helper={selectedRoute === "live" ? "Live route locked by env gates" : "Paper-safe workflow"} tone={selectedRoute === "live" ? "bad" : "good"} />
+            <StatTile label="Mode" value={routeLabel(selectedRoute)} helper={selectedRoute === "live" ? "Live route locked by env gates" : "Alpaca Paper broker-synced"} tone={selectedRoute === "live" ? "bad" : "good"} />
             <StatTile label="Last action" value={lastAction.title} helper={bot?.lastEvent ? formatDateTime(bot.lastEvent.created_at) : lastAction.detail} tone={bot?.lastEvent?.event_type?.includes("error") ? "bad" : "info"} />
-            <StatTile label="Tracked equity" value={money(trackedEquity)} helper={`${equitySourceLabel} · app ledger ${money(appLedgerEquity)}`} tone={useBrokerEquity || trackedEquity >= Number(control.starting_equity || 5000) ? "good" : "bad"} />
-            <StatTile label="Broker sync" value={selectedRoute === "paper" ? `${openTrades.length} app / ${brokerPositionCount} broker` : "Internal"} helper={brokerMismatchCount ? `${brokerMismatchCount} stale app-open record(s) need reconciliation` : "App records match broker count or broker mode is off"} tone={brokerMismatchCount ? "warn" : "good"} />
+            <StatTile label="Tracked equity" value={money(trackedEquity)} helper={useBrokerEquity ? `${equitySourceLabel} · broker is source of truth` : `Waiting for broker · app ledger ${money(appLedgerEquity)}`} tone={useBrokerEquity ? "good" : "warn"} />
+            <StatTile label="Broker sync" value={`${openTrades.length} app / ${brokerPositionCount} broker`} helper={brokerMismatchCount ? `${brokerMismatchCount} stale app-open record(s) need sync` : "App records match broker positions"} tone={brokerMismatchCount ? "warn" : "good"} />
           </section>
 
           <section className="dash-panel preflight-panel-v85 preflight-panel-v86 admin-status-panel-v87">
@@ -478,24 +483,21 @@ export default function AdminPage() {
 
           <section id="command" className="dash-panel execution-panel-v85 execution-panel-v86 execution-panel-v87">
             <div className="panel-heading-row">
-              <div><h2>Execution mode</h2><p>Same strategy and watchlist in all modes. Only the destination changes.</p></div>
+              <div><h2>Execution mode</h2><p>Admin is broker-only now: Paper Trading uses Alpaca Paper; Real Money stays locked until explicitly configured.</p></div>
             </div>
             <div className="route-mode-grid-v85 route-mode-grid-v87">
-              <button className={`route-mode-card-v85 ${selectedRoute === "internal" ? "selected" : ""}`} onClick={() => void setExecutionRoute("internal")} disabled={saving}>
-                <span>Safest</span><strong>Internal paper</strong><small>Records trades inside Supabase only. No Alpaca orders.</small>
-              </button>
               <button className={`route-mode-card-v85 ${selectedRoute === "paper" ? "selected" : ""}`} onClick={() => void setExecutionRoute("paper")} disabled={saving}>
-                <span>Week target</span><strong>Alpaca paper</strong><small>Sends simulated orders to Alpaca Paper and keeps the full app audit trail.</small>
+                <span>Current target</span><strong>Paper Trading</strong><small>Uses Alpaca Paper. Simulated money, real broker-style orders, and broker equity as the source of truth.</small>
               </button>
               <button className={`route-mode-card-v85 live ${selectedRoute === "live" ? "selected" : ""}`} onClick={() => void setExecutionRoute("live")} disabled={saving}>
-                <span>Locked</span><strong>Alpaca real money</strong><small>Structurally available later, but real orders require live keys and explicit unlock gates.</small>
+                <span>Locked</span><strong>Real Money</strong><small>Uses Alpaca Live only after live keys and explicit unlock gates are intentionally configured.</small>
               </button>
             </div>
             <div className="execution-command-bar-v85 execution-command-bar-v87">
               <div>
                 <span>Selected route</span>
                 <strong>{brokerMode}</strong>
-                <small>{canTrade ? "Execution is armed. Cron may open paper trades when all gates pass." : "Execution is disarmed. Cron can scan and log, but cannot open new trades."}</small>
+                <small>{canTrade ? "Execution is armed. Cron may open broker-synced paper trades when all gates pass." : "Execution is disarmed. Cron can scan and log, but cannot open new trades."}</small>
               </div>
               <div className="row-actions admin-primary-actions">
                 <button onClick={() => void quickSetTrading(true)} disabled={saving || canTrade}>Arm</button>
@@ -511,7 +513,7 @@ export default function AdminPage() {
           <section id="settings" className="dash-panel settings-panel-v80 settings-panel-v86 settings-panel-v87">
             <div className="panel-heading-row">
               <div><h2>Best-bot profile + guardrails</h2><p>These are the actual rules the cloud worker will use on the next run. Defaults match the 05/31 corrected best profile.</p></div>
-              <span className="small-pill">v9.2.2 labels</span>
+              <span className="small-pill">v9.3 broker-only</span>
             </div>
             <div className="settings-grid admin-settings-grid compact-settings-grid settings-grid-v86 settings-grid-v87">
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>
@@ -538,7 +540,6 @@ export default function AdminPage() {
               <label>Cooldown minutes<input type="number" value={control.cooldown_minutes ?? 60} onChange={(e) => update({ cooldown_minutes: Number(e.target.value) || 60 })} /></label>
               <label>Max bars to hold<input type="number" value={control.max_bars_to_hold ?? 120} onChange={(e) => update({ max_bars_to_hold: Number(e.target.value) || 120 })} /></label>
               <label>Warmup bars<input type="number" value={control.warmup_bars ?? 200} onChange={(e) => update({ warmup_bars: Number(e.target.value) || 200 })} /></label>
-              <label>Internal starting equity<input type="number" value={control.starting_equity} onChange={(e) => update({ starting_equity: Number(e.target.value) || 5000 })} /><small>Used only for Internal Paper. Alpaca Paper displays broker account equity.</small></label>
               <label>Account type<select value={control.account_type || "Cash"} onChange={(e) => update({ account_type: e.target.value, margin_multiplier: e.target.value === "Cash" ? 1 : control.margin_multiplier })}><option>Cash</option><option>Margin</option></select></label>
               <label>Buying power multiple<input type="number" step="0.5" value={control.margin_multiplier ?? 1} onChange={(e) => update({ margin_multiplier: Number(e.target.value) || 1 })} /></label>
               <label>Fractional shares<select value={control.allow_fractional_shares ? "yes" : "no"} onChange={(e) => update({ allow_fractional_shares: e.target.value === "yes" })}><option value="yes">Yes</option><option value="no">No, whole shares only</option></select></label>
@@ -552,7 +553,7 @@ export default function AdminPage() {
 
           <section id="positions" className="dash-panel settings-panel-v80 settings-panel-v86 settings-panel-v87">
             <div className="panel-heading-row">
-              <div><h2>Position manager</h2><p>Readable view of app-open trades and broker health. This is the paper-trading safety panel.</p></div>
+              <div><h2>Position manager</h2><p>Readable view of app trade records and Alpaca broker health. Broker positions are the source of truth.</p></div>
               <span className="small-pill">{openTrades.length} open records</span>
             </div>
             <div className="watchlist-summary-v87">
@@ -571,9 +572,9 @@ export default function AdminPage() {
             </div>
             <div className="execution-command-bar-v85 execution-command-bar-v87">
               <div>
-                <span>Paper cleanup</span>
-                <strong>Alpaca Paper only</strong>
-                <small>Cancel orders removes waiting orders. Close positions exits actual paper holdings. Live mode remains blocked here.</small>
+                <span>Broker cleanup</span>
+                <strong>Paper Trading only</strong>
+                <small>Cancel orders removes waiting broker orders. Close positions exits actual Alpaca Paper holdings. Live mode remains blocked here.</small>
               </div>
               <div className="row-actions admin-primary-actions">
                 <button className="danger" onClick={() => void paperKill("cancel_orders")}>Cancel orders</button>
@@ -583,8 +584,8 @@ export default function AdminPage() {
             <div className="execution-command-bar-v85 execution-command-bar-v87">
               <div>
                 <span>App/broker sync</span>
-                <strong>Clean test state</strong>
-                <small>Sync with broker fixes stale app-open records. Reset app archives old app records and starts from current Alpaca Paper equity.</small>
+                <strong>Clean app records</strong>
+                <small>Sync with broker fixes stale app-open records. Reset app archives old app records and starts a fresh app log from current broker equity.</small>
               </div>
               <div className="row-actions admin-primary-actions">
                 <button className="secondary" onClick={() => void paperReset("reconcile")}>Sync with broker</button>
@@ -627,7 +628,7 @@ export default function AdminPage() {
             <h2>Now</h2>
             <div className="snapshot-stack-v87 compact-admin-rail-v88">
               <SnapshotRow label="Bot" value={control.bot_enabled ? "Running" : "Paused"} helper={canTrade ? "Execution armed" : "Execution disarmed"} tone={control.bot_enabled ? "good" : "warn"} />
-              <SnapshotRow label="Route" value={routeLabel(selectedRoute)} helper={selectedRoute === "paper" ? "Alpaca Paper broker route selected." : selectedRoute === "live" ? "Live route selected but locked unless live gates pass." : "Internal Supabase paper records only."} tone={selectedRoute === "live" ? "bad" : "good"} />
+              <SnapshotRow label="Route" value={routeLabel(selectedRoute)} helper={selectedRoute === "live" ? "Live route selected but locked unless live gates pass." : "Alpaca Paper broker route selected."} tone={selectedRoute === "live" ? "bad" : "good"} />
               <SnapshotRow label="Watchlist" value={`${activeSymbols.length} / ${trackedSymbols.length}`} helper="Scanned per run / saved symbols." tone="info" />
               <SnapshotRow label="Last action" value={lastAction.title} helper={lastAction.detail} tone={bot?.lastEvent?.event_type?.includes("error") ? "bad" : "info"} />
             </div>
@@ -636,7 +637,7 @@ export default function AdminPage() {
           <section className="dash-panel inspector-card system-snapshot-card rail-card-v88">
             <h2>Broker + records</h2>
             <div className="rule-stack readable-stack-v87 compact-rule-stack-v88">
-              <div><span>Connection</span><strong>{bot?.broker?.canSubmitOrders ? "Order route ready" : selectedRoute === "internal" ? "Not required" : "Blocked"}</strong><small>{bot?.broker?.message || bot?.broker?.error || "Broker status loading."}</small></div>
+              <div><span>Connection</span><strong>{bot?.broker?.canSubmitOrders ? "Order route ready" : "Blocked"}</strong><small>{bot?.broker?.message || bot?.broker?.error || "Broker status loading."}</small></div>
               <div><span>Paper account</span><strong>{bot?.broker?.account?.portfolio_value ? money(Number(bot.broker.account.portfolio_value)) : "—"}</strong><small>{bot?.broker?.account?.buying_power ? `${money(Number(bot.broker.account.buying_power))} buying power · equity source ${useBrokerEquity ? "broker" : "app"}` : "No broker account loaded."}</small></div>
               <div><span>Records</span><strong>{openTrades.length} app-open · {brokerPositionCount} broker positions</strong><small>{brokerMismatchCount ? `${brokerMismatchCount} stale app record(s) need reconcile.` : `${bot?.broker?.orders?.length ?? 0} broker orders currently loaded.`}</small></div>
             </div>

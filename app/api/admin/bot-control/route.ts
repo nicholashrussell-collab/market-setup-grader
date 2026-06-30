@@ -92,6 +92,12 @@ export async function PATCH(req: Request) {
   for (const key of keys) {
     if (Object.prototype.hasOwnProperty.call(body, key)) allowed[key] = body[key];
   }
+  // v9.3 Admin is broker-only. Legacy internal/simulation saves are normalized to Alpaca Paper unless Live is explicitly selected.
+  if (allowed.broker_mode !== "Alpaca Live" && allowed.broker_live_enabled !== true) {
+    allowed.broker_mode = "Alpaca Paper";
+    allowed.broker_paper_enabled = true;
+    allowed.broker_live_enabled = false;
+  }
   try {
     const rows = await supabaseRest<any[]>("bot_control?on_conflict=id", {
       method: "POST",
