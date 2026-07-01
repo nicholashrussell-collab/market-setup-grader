@@ -1,6 +1,6 @@
 {
-  "name": "market-setup-grader-v9-7",
-  "version": "9.7.0",
+  "name": "market-setup-grader-v9-8",
+  "version": "9.8.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
