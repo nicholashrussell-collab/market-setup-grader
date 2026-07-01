@@ -61,7 +61,7 @@ type BotSettings = {
 };
 
 type BotStatus = { ok: boolean; settings?: BotSettings };
-type ProgressState = { running: boolean; current: number; total: number; symbol: string; message: string; phase: "idle" | "fetch" | "simulate" | "done" };
+type ProgressState = { running: boolean; current: number; total: number; symbol: string; message: string; phase: "idle" | "fetch" | "wait" | "simulate" | "done" };
 
 type ResearchForm = {
   timeframe: Timeframe;
@@ -90,6 +90,9 @@ type ResearchForm = {
   maxStaleMinutes: number;
   allowStaleSimulation: boolean;
   noOvernight: boolean;
+  fetchDelayMs: number;
+  rateLimitPauseMs: number;
+  maxFetchAttempts: number;
   gradeProfile: GradeProfile;
   directionFilter: DirectionFilter;
   regimeFilter: RegimeFilter;
@@ -106,7 +109,7 @@ type ResearchForm = {
 type OpenPosition = { trade: JournalTrade; openedIndex: number; barsHeld: number; openedMs: number; lastCandle?: Candle };
 type EquityPoint = { time: string; value: number; r: number };
 type ChartPoint = { time: string; value: number };
-type FetchDiagnostic = { symbol: string; status: "loaded" | "insufficient" | "empty" | "failed"; candles: number; usable: boolean; firstTime?: string | null; latestTime?: string | null; pagesFetched?: number; truncated?: boolean; error?: string };
+type FetchDiagnostic = { symbol: string; status: "loaded" | "insufficient" | "empty" | "failed"; candles: number; usable: boolean; firstTime?: string | null; latestTime?: string | null; pagesFetched?: number; requestAttempts?: number; rateLimitRetries?: number; clientAttempts?: number; truncated?: boolean; error?: string };
 type SymbolStats = { symbol: string; trades: number; wins: number; losses: number; totalR: number; positiveR: number; negativeR: number };
 type BucketStats = { label: string; trades: number; wins: number; totalR: number; positiveR: number; negativeR: number };
 type SimResult = {
@@ -172,6 +175,9 @@ const DEFAULTS = {
   maxStaleMinutes: 30,
   allowStaleSimulation: false,
   noOvernight: true,
+  fetchDelayMs: 750,
+  rateLimitPauseMs: 45000,
+  maxFetchAttempts: 4,
 };
 
 function defaultForm(): ResearchForm {
@@ -202,6 +208,9 @@ function defaultForm(): ResearchForm {
     maxStaleMinutes: DEFAULTS.maxStaleMinutes,
     allowStaleSimulation: DEFAULTS.allowStaleSimulation,
     noOvernight: DEFAULTS.noOvernight,
+    fetchDelayMs: DEFAULTS.fetchDelayMs,
+    rateLimitPauseMs: DEFAULTS.rateLimitPauseMs,
+    maxFetchAttempts: DEFAULTS.maxFetchAttempts,
     gradeProfile: "Pullback",
     directionFilter: "Long",
     regimeFilter: "Off",
@@ -247,6 +256,12 @@ function inEntryWindow(value: string, start: number, end: number) {
   const mins = etMinutes(value);
   return mins >= start && mins <= end;
 }
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+function isRateLimitMessage(message: string) {
+  return /too many requests|rate limit|\b429\b/i.test(message);
+}
 function barsUrl(symbol: string, timeframe: Timeframe, start: string, end: string, warmupBars: number) {
   const msPerBar = timeframe === "1Min" ? 60_000 : timeframe === "5Min" ? 300_000 : timeframe === "30Min" ? 1_800_000 : timeframe === "1Hour" ? 3_600_000 : 900_000;
   const warmupPad = Math.max(7, Math.ceil((warmupBars * msPerBar) / 86_400_000) + 5);
@@ -262,30 +277,45 @@ function barsUrl(symbol: string, timeframe: Timeframe, start: string, end: strin
   url.searchParams.set("end", endIso);
   url.searchParams.set("adjustment", "split");
   url.searchParams.set("limit", "10000");
+  url.searchParams.set("pageDelayMs", "200");
+  url.searchParams.set("maxRetries", "3");
   return `${url.pathname}${url.search}`;
 }
-async function fetchCandleBundle(symbol: string, timeframe: Timeframe, start: string, end: string, warmupBars: number): Promise<{ candles: Candle[]; diagnostic: FetchDiagnostic }> {
-  const res = await fetch(barsUrl(symbol, timeframe, start, end, warmupBars), { cache: "no-store" });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
+async function fetchCandleBundle(symbol: string, timeframe: Timeframe, start: string, end: string, warmupBars: number, options: { maxAttempts: number; rateLimitPauseMs: number; onWait?: (message: string) => void }): Promise<{ candles: Candle[]; diagnostic: FetchDiagnostic }> {
+  const maxAttempts = Math.max(1, options.maxAttempts);
+  let lastMessage = "failed";
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const res = await fetch(barsUrl(symbol, timeframe, start, end, warmupBars), { cache: "no-store" });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const candles = (data.bars || []).sort((a: Candle, b: Candle) => new Date(a.time).getTime() - new Date(b.time).getTime());
+      const usable = candles.length > Math.max(warmupBars, 50);
+      return {
+        candles,
+        diagnostic: {
+          symbol,
+          status: candles.length ? (usable ? "loaded" : "insufficient") : "empty",
+          candles: candles.length,
+          usable,
+          firstTime: data.firstTime || candles[0]?.time || null,
+          latestTime: data.latestTime || candles[candles.length - 1]?.time || null,
+          pagesFetched: Number(data.pagesFetched || 0),
+          requestAttempts: Number(data.requestAttempts || 0),
+          rateLimitRetries: Number(data.rateLimitRetries || 0),
+          clientAttempts: attempt,
+          truncated: Boolean(data.truncated),
+        },
+      };
+    }
     const detail = data?.details ? ` ${JSON.stringify(data.details).slice(0, 220)}` : "";
-    throw new Error(`${data?.error || "Alpaca request failed."}${detail}`);
+    lastMessage = `${data?.error || "Alpaca request failed."}${detail}`;
+    const isRateLimited = res.status === 429 || isRateLimitMessage(lastMessage);
+    if (!isRateLimited || attempt >= maxAttempts) break;
+    const pause = Math.max(5000, options.rateLimitPauseMs);
+    options.onWait?.(`${symbol} hit Alpaca rate limit. Waiting ${Math.round(pause / 1000)}s before retry ${attempt + 1}/${maxAttempts}...`);
+    await sleep(pause);
   }
-  const candles = (data.bars || []).sort((a: Candle, b: Candle) => new Date(a.time).getTime() - new Date(b.time).getTime());
-  const usable = candles.length > Math.max(warmupBars, 50);
-  return {
-    candles,
-    diagnostic: {
-      symbol,
-      status: candles.length ? (usable ? "loaded" : "insufficient") : "empty",
-      candles: candles.length,
-      usable,
-      firstTime: data.firstTime || candles[0]?.time || null,
-      latestTime: data.latestTime || candles[candles.length - 1]?.time || null,
-      pagesFetched: Number(data.pagesFetched || 0),
-      truncated: Boolean(data.truncated),
-    },
-  };
+  throw new Error(lastMessage);
 }
 function scoreBucket(score: number) {
   if (score < 60) return "Under 60";
@@ -497,7 +527,11 @@ export default function ResearchPage() {
       const sym = list[i];
       setProgress({ running: true, current: i, total: list.length, symbol: sym, message: `Fetching ${sym} candles...`, phase: "fetch" });
       try {
-        const { candles, diagnostic } = await fetchCandleBundle(sym, form.timeframe, form.start, form.end, form.warmupBars);
+        const { candles, diagnostic } = await fetchCandleBundle(sym, form.timeframe, form.start, form.end, form.warmupBars, {
+          maxAttempts: form.maxFetchAttempts,
+          rateLimitPauseMs: form.rateLimitPauseMs,
+          onWait: (message) => setProgress({ running: true, current: i, total: list.length, symbol: sym, message, phase: "wait" }),
+        });
         fetchDiagnostics.push(diagnostic);
         if (candles.length) { bySymbol.set(sym, candles); candleCount += candles.length; }
         const statusText = diagnostic.truncated ? "truncated" : diagnostic.status;
@@ -505,10 +539,16 @@ export default function ResearchPage() {
       } catch (err) {
         const message = err instanceof Error ? err.message : "failed";
         errors.push(`${sym}: ${message}`);
-        fetchDiagnostics.push({ symbol: sym, status: "failed", candles: 0, usable: false, error: message });
+        fetchDiagnostics.push({ symbol: sym, status: "failed", candles: 0, usable: false, clientAttempts: form.maxFetchAttempts, error: message });
         setProgress({ running: true, current: i + 1, total: list.length, symbol: sym, message: `${i + 1}/${list.length} fetched · ${sym} failed`, phase: "fetch" });
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      const pacing = Math.max(0, form.fetchDelayMs);
+      if (pacing > 0 && i < list.length - 1) {
+        setProgress({ running: true, current: i + 1, total: list.length, symbol: sym, message: `Pacing Alpaca requests · waiting ${Math.round(pacing / 1000)}s before next symbol...`, phase: "wait" });
+        await sleep(pacing);
+      } else {
+        await sleep(0);
+      }
     }
 
     const requestedStartMs = new Date(`${form.start}T00:00:00-04:00`).getTime();
@@ -581,7 +621,7 @@ export default function ResearchPage() {
         lastEntryBySymbol.set(candidate.symbol, timeMs);
         openedThisRun += 1;
       }
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      await sleep(0);
     }
 
     const lastTime = timeline[timeline.length - 1] || new Date().toISOString();
@@ -605,9 +645,9 @@ export default function ResearchPage() {
           <div className="sidebar-system-card"><strong>True portfolio simulation</strong><small>One shared timeline. Max new trades/run and max open trades are enforced globally.</small></div>
         </aside>
         <section className="page-viewer-main">
-          <div className="viewer-topbar"><span className="eyebrow">v9.9 · Research diagnostics</span><h1>Backtest Control Room</h1><p>If the Admin bot had run these settings over the selected dates, what would the shared portfolio have done?</p><div className="hero-actions"><button onClick={loadAdminProfile} disabled={progress.running}>Load settings from Admin</button><button className="primary" onClick={run} disabled={progress.running}>{progress.running ? "Running..." : "Run portfolio backtest"}</button></div><p className="status-line">{status}</p>{error ? <p className="warning-box">{error}</p> : null}</div>
+          <div className="viewer-topbar"><span className="eyebrow">v10 · Research fetch queue</span><h1>Backtest Control Room</h1><p>If the Admin bot had run these settings over the selected dates, what would the shared portfolio have done?</p><div className="hero-actions"><button onClick={loadAdminProfile} disabled={progress.running}>Load settings from Admin</button><button className="primary" onClick={run} disabled={progress.running}>{progress.running ? "Running..." : "Run portfolio backtest"}</button></div><p className="status-line">{status}</p>{error ? <p className="warning-box">{error}</p> : null}</div>
           <div className="mini-grid wide"><SmallMetric label="Mode" value="Portfolio backtest" helper="Global Admin-style simulation" /><SmallMetric label="Date range" value={`${form.start} → ${form.end}`} helper="Historical candles" /><SmallMetric label="Universe" value={`${activeSymbols.length}/${symbols.length}`} helper="Scanned / saved symbols" /><SmallMetric label="Timeframe" value={form.timeframe} helper="Same concept as Admin" /><SmallMetric label="Target" value={form.targetMode === "FixedR" ? `${form.fixedTargetR}R` : form.targetMode} helper={`${form.targetMode} target mode`} /><SmallMetric label="Progress" value={progress.total ? `${progress.current}/${progress.total}` : "Idle"} helper={progress.message} /></div>
-          <section className="panel"><div className="section-heading-row"><div><h2>Backtest window</h2><p className="muted small">These are the only fields Research adds on top of Admin settings.</p></div><span className="badge">Alpaca candles · no execution</span></div><div className="form-grid backtest-grid"><Field label="Start date"><input type="date" value={form.start} onChange={(e) => patch({ start: e.target.value })} /></Field><Field label="End date"><input type="date" value={form.end} onChange={(e) => patch({ end: e.target.value })} /></Field><Field label="Starting capital"><input type="number" value={form.startingCapital} onChange={(e) => patch({ startingCapital: num(e.target.value, form.startingCapital) })} /></Field></div><p className="muted small">Everything below mirrors Admin. Use “Load settings from Admin” to test the same controls over this date range.</p></section>
+          <section className="panel"><div className="section-heading-row"><div><h2>Backtest window</h2><p className="muted small">These are the only fields Research adds on top of Admin settings.</p></div><span className="badge">Alpaca candles · no execution</span></div><div className="form-grid backtest-grid"><Field label="Start date"><input type="date" value={form.start} onChange={(e) => patch({ start: e.target.value })} /></Field><Field label="End date"><input type="date" value={form.end} onChange={(e) => patch({ end: e.target.value })} /></Field><Field label="Starting capital"><input type="number" value={form.startingCapital} onChange={(e) => patch({ startingCapital: num(e.target.value, form.startingCapital) })} /></Field></div><div className="section-heading-row fetch-queue-heading"><div><h3>Research fetch queue</h3><p className="muted small">Slows and retries historical Alpaca requests so large 15-minute tests do not fail after the first batch.</p></div><span className="badge">Research only</span></div><div className="form-grid backtest-grid"><Field label="Delay between symbols (ms)"><input type="number" step="250" value={form.fetchDelayMs} onChange={(e) => patch({ fetchDelayMs: num(e.target.value, form.fetchDelayMs) })} /></Field><Field label="Rate-limit pause (ms)"><input type="number" step="5000" value={form.rateLimitPauseMs} onChange={(e) => patch({ rateLimitPauseMs: num(e.target.value, form.rateLimitPauseMs) })} /></Field><Field label="Max fetch attempts"><input type="number" min="1" max="8" value={form.maxFetchAttempts} onChange={(e) => patch({ maxFetchAttempts: num(e.target.value, form.maxFetchAttempts) })} /></Field></div><p className="muted small">For huge tests like 499 symbols over multiple years, use a longer delay or run in smaller scan-limit chunks. Everything below mirrors Admin.</p></section>
 
           <section className="panel"><div className="section-heading-row"><div><h2>Admin-style settings under test</h2><p className="muted small">Same options and order as Admin, but simulated historically with one shared portfolio.</p></div><span className="badge">No Admin changes</span></div><div className="form-grid backtest-grid"><Field label="Timeframe"><select value={form.timeframe} onChange={(e) => patch({ timeframe: e.target.value as Timeframe })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></Field><Field label="Grader profile"><select value={form.gradeProfile} onChange={(e) => patch({ gradeProfile: e.target.value as GradeProfile })}><option>Pullback</option><option>Balanced</option><option>Breakout</option></select></Field><Field label="Direction filter"><select value={form.directionFilter} onChange={(e) => patch({ directionFilter: e.target.value as DirectionFilter, allowShorts: e.target.value === "Short" || e.target.value === "All" })}><option value="Long">Long Only</option><option value="All">Long + Short</option><option value="Short">Short Only</option></select></Field><Field label="Strategy engine"><select value={form.strategyEngine} onChange={(e) => patch({ strategyEngine: e.target.value as StrategyEngine })}><option>UniversalAdaptiveProV3</option><option>UniversalAdaptiveProV2</option><option>UniversalAdaptivePro</option><option>UniversalAdaptive</option><option>Manual</option></select></Field><Field label="Regime filter"><select value={form.regimeFilter} onChange={(e) => patch({ regimeFilter: e.target.value as RegimeFilter })}><option>Off</option><option>BlockLongBear</option><option>LongBullOnly</option><option>ShortBearOnly</option><option>LongBullShortBear</option></select></Field><Field label="Session filter"><select value={form.sessionFilter} onChange={(e) => patch({ sessionFilter: e.target.value as SessionFilter })}><option>MiddayAfternoon</option><option>RegularHours</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>All</option></select></Field><Field label="Setup type"><select value={form.setupTypeFilter} onChange={(e) => patch({ setupTypeFilter: e.target.value as SetupTypeFilter })}><option>AdaptiveBest</option><option>Pullback</option><option>Continuation</option><option>ContinuationPullback</option><option>ExcludeBreakoutChase</option><option>All</option></select></Field><Field label="Scan limit"><input type="number" value={form.scanLimit} onChange={(e) => patch({ scanLimit: num(e.target.value, form.scanLimit) })} /></Field><Field label="Min score"><input type="number" value={form.minScore} onChange={(e) => patch({ minScore: num(e.target.value, form.minScore) })} /></Field><Field label="Max score"><input type="number" value={form.maxScore} onChange={(e) => patch({ maxScore: num(e.target.value, form.maxScore) })} /></Field><Field label="Min R/R"><input type="number" step="0.1" value={form.minRR} onChange={(e) => patch({ minRR: num(e.target.value, form.minRR) })} /></Field><Field label="Target mode"><select value={form.targetMode} onChange={(e) => patch({ targetMode: e.target.value as TargetMode })}><option>FixedR</option><option>Structure</option><option>ATR</option></select></Field><Field label="Fixed target R"><input type="number" step="0.1" value={form.fixedTargetR} onChange={(e) => patch({ fixedTargetR: num(e.target.value, form.fixedTargetR) })} /></Field><Field label="Leader exit mode"><select value={form.leaderExitMode} onChange={(e) => patch({ leaderExitMode: e.target.value as LeaderExitMode })}><option>Fixed</option><option>Expanded</option><option>PartialRunner</option></select></Field><Field label="Risk model"><select value={form.riskModel} onChange={(e) => patch({ riskModel: e.target.value as RiskModel })}><option>Percent</option><option>Fixed</option></select></Field><Field label="Risk per trade %"><input type="number" step="0.1" value={form.riskPct} onChange={(e) => patch({ riskPct: num(e.target.value, form.riskPct) })} /></Field><Field label="Fixed risk $"><input type="number" value={form.fixedRiskDollars} onChange={(e) => patch({ fixedRiskDollars: num(e.target.value, form.fixedRiskDollars) })} /></Field><Field label="Max position %"><input type="number" step="1" value={form.maxPositionPct} onChange={(e) => patch({ maxPositionPct: num(e.target.value, form.maxPositionPct) })} /></Field><Field label="Max open trades"><input type="number" value={form.maxOpenTrades} onChange={(e) => patch({ maxOpenTrades: num(e.target.value, form.maxOpenTrades) })} /></Field><Field label="Max new trades/run"><input type="number" value={form.maxNewTradesPerRun} onChange={(e) => patch({ maxNewTradesPerRun: num(e.target.value, form.maxNewTradesPerRun) })} /></Field><Field label="Max total open risk %"><input type="number" step="0.5" value={form.maxTotalOpenRiskPct} onChange={(e) => patch({ maxTotalOpenRiskPct: num(e.target.value, form.maxTotalOpenRiskPct) })} /></Field><Field label="Cooldown minutes"><input type="number" value={form.cooldownMinutes} onChange={(e) => patch({ cooldownMinutes: num(e.target.value, form.cooldownMinutes) })} /></Field><Field label="Max bars to hold"><input type="number" value={form.maxBarsToHold} onChange={(e) => patch({ maxBarsToHold: num(e.target.value, form.maxBarsToHold) })} /></Field><Field label="Warmup bars"><input type="number" value={form.warmupBars} onChange={(e) => patch({ warmupBars: num(e.target.value, form.warmupBars) })} /></Field><Field label="Account type"><select value={form.accountType} onChange={(e) => patch({ accountType: e.target.value as RealisticAccountType, marginMultiplier: e.target.value === "Cash" ? 1 : form.marginMultiplier })}><option>Cash</option><option>Margin</option></select></Field><Field label="Buying power multiple"><input type="number" step="0.5" value={form.marginMultiplier} onChange={(e) => patch({ marginMultiplier: num(e.target.value, form.marginMultiplier) })} /></Field><Field label="Fractional shares"><select value={form.allowFractionalShares ? "yes" : "no"} onChange={(e) => patch({ allowFractionalShares: e.target.value === "yes" })}><option value="yes">Yes</option><option value="no">No, whole shares only</option></select></Field><Field label="Shorts"><select value={form.allowShorts ? "yes" : "no"} onChange={(e) => patch({ allowShorts: e.target.value === "yes", directionFilter: e.target.value === "yes" ? form.directionFilter : "Long" })}><option value="no">Blocked</option><option value="yes">Allowed</option></select></Field><Field label="Entry start ET"><input type="number" value={form.entryStart} onChange={(e) => patch({ entryStart: num(e.target.value, form.entryStart) })} /></Field><Field label="Entry end ET"><input type="number" value={form.entryEnd} onChange={(e) => patch({ entryEnd: num(e.target.value, form.entryEnd) })} /></Field><Field label="Overnight holds"><select value={form.noOvernight ? "blocked" : "allowed"} onChange={(e) => patch({ noOvernight: e.target.value === "blocked" })}><option value="blocked">Blocked: exit by end of day</option><option value="allowed">Allowed: hold until stop/target/timeout</option></select></Field><Field label="Max stale minutes"><input type="number" value={form.maxStaleMinutes} onChange={(e) => patch({ maxStaleMinutes: num(e.target.value, form.maxStaleMinutes) })} /></Field><Field label="Stale simulation"><select value={form.allowStaleSimulation ? "on" : "off"} onChange={(e) => patch({ allowStaleSimulation: e.target.value === "on" })}><option value="off">OFF: block stale candles</option><option value="on">ON: research test only</option></select></Field></div><p className="muted small">Entry window: {minutesToEt(form.entryStart)} to {minutesToEt(form.entryEnd)}. Research has the same setting options as Admin, but only Start date, End date, and Starting capital are Research-only.</p></section>
 
@@ -643,12 +683,14 @@ function FetchDiagnosticsPanel({ diagnostics }: { diagnostics: FetchDiagnostic[]
   const empty = diagnostics.filter((d) => d.status === "empty");
   const insufficient = diagnostics.filter((d) => d.status === "insufficient");
   const truncated = diagnostics.filter((d) => d.truncated);
+  const rateLimited = diagnostics.filter((d) => isRateLimitMessage(d.error || "") || (d.rateLimitRetries || 0) > 0);
+  const attempts = diagnostics.reduce((sum, d) => sum + (d.requestAttempts || 0) + Math.max(0, (d.clientAttempts || 1) - 1), 0);
   const largest = diagnostics.filter((d) => d.candles > 0).sort((a, b) => b.candles - a.candles).slice(0, 8);
   return <div className="breakdown-card diagnostic-grid fetch-diagnostics-card">
     <div className="section-heading-row"><div><h3>Candle loading diagnostics</h3><p className="muted small">This explains why a long test may say 499 active symbols but only a smaller number loaded or usable.</p></div><span className="badge">{diagnostics.length} requested</span></div>
-    <div className="mini-grid wide"><SmallMetric label="Loaded" value={counts.loaded} helper="Enough candles for warmup" /><SmallMetric label="Insufficient" value={counts.insufficient} helper="Fetched, but too few bars" /><SmallMetric label="Empty" value={counts.empty} helper="No bars returned" /><SmallMetric label="Failed" value={counts.failed} helper="Request/API error" /><SmallMetric label="Truncated" value={counts.truncated} helper="Page cap hit" /></div>
+    <div className="mini-grid wide"><SmallMetric label="Loaded" value={counts.loaded} helper="Enough candles for warmup" /><SmallMetric label="Insufficient" value={counts.insufficient} helper="Fetched, but too few bars" /><SmallMetric label="Empty" value={counts.empty} helper="No bars returned" /><SmallMetric label="Failed" value={counts.failed} helper="Request/API error" /><SmallMetric label="Truncated" value={counts.truncated} helper="Page cap hit" /><SmallMetric label="Rate limited" value={rateLimited.length} helper={`${attempts.toLocaleString()} request attempts`} /></div>
     {truncated.length ? <div className="warning-box">Some symbols were truncated by the Alpaca pagination cap. Shorten the date range, use fewer symbols, or test in chunks.<br />{truncated.slice(0, 12).map((d) => `${d.symbol}: ${d.candles.toLocaleString()} candles`).join("\n")}</div> : null}
-    {failed.length || empty.length || insufficient.length ? <div className="table-wrap compact"><table><thead><tr><th>Symbol</th><th>Status</th><th>Candles</th><th>Pages</th><th>First</th><th>Latest</th><th>Reason</th></tr></thead><tbody>{[...failed, ...empty, ...insufficient].slice(0, 40).map((d) => <tr key={`${d.symbol}-${d.status}`}><td>{d.symbol}</td><td>{d.status}</td><td>{d.candles.toLocaleString()}</td><td>{d.pagesFetched || 0}</td><td>{d.firstTime ? d.firstTime.slice(0, 10) : "—"}</td><td>{d.latestTime ? d.latestTime.slice(0, 10) : "—"}</td><td>{d.error || (d.status === "insufficient" ? "Below warmup requirement" : d.status === "empty" ? "No bars returned by feed" : "—")}</td></tr>)}</tbody></table></div> : <p className="muted small">All requested symbols loaded usable candles.</p>}
+    {failed.length || empty.length || insufficient.length ? <div className="table-wrap compact"><table><thead><tr><th>Symbol</th><th>Status</th><th>Candles</th><th>Pages</th><th>Attempts</th><th>First</th><th>Latest</th><th>Reason</th></tr></thead><tbody>{[...failed, ...empty, ...insufficient].slice(0, 40).map((d) => <tr key={`${d.symbol}-${d.status}`}><td>{d.symbol}</td><td>{d.status}</td><td>{d.candles.toLocaleString()}</td><td>{d.pagesFetched || 0}</td><td>{d.clientAttempts || 1}/{d.requestAttempts || 0}</td><td>{d.firstTime ? d.firstTime.slice(0, 10) : "—"}</td><td>{d.latestTime ? d.latestTime.slice(0, 10) : "—"}</td><td>{d.error || (d.status === "insufficient" ? "Below warmup requirement" : d.status === "empty" ? "No bars returned by feed" : "—")}</td></tr>)}</tbody></table></div> : <p className="muted small">All requested symbols loaded usable candles.</p>}
     {largest.length ? <p className="muted small">Largest loaded symbols: {largest.map((d) => `${d.symbol} ${d.candles.toLocaleString()}`).join(" · ")}</p> : null}
   </div>;
 }

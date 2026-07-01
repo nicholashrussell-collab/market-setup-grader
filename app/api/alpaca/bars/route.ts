@@ -46,7 +46,19 @@ function toCsv(bars: AlpacaBar[]): string {
   return [header, ...lines].join("\n");
 }
 
-async function fetchPage(url: URL, key: string, secret: string) {
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parseRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const dateMs = new Date(value).getTime();
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : null;
+}
+
+async function fetchPage(url: URL, key: string, secret: string, attempt = 1): Promise<{ ok: boolean; status: number; json: any; retryAfterMs?: number | null; attempts: number }> {
   const res = await fetch(url.toString(), {
     cache: "no-store",
     headers: {
@@ -63,11 +75,13 @@ async function fetchPage(url: URL, key: string, secret: string) {
     json = { raw: text };
   }
 
+  const retryAfterMs = parseRetryAfter(res.headers.get("retry-after"));
+
   if (!res.ok) {
-    return { ok: false, status: res.status, json };
+    return { ok: false, status: res.status, json, retryAfterMs, attempts: attempt };
   }
 
-  return { ok: true, status: res.status, json };
+  return { ok: true, status: res.status, json, retryAfterMs, attempts: attempt };
 }
 
 export async function GET(req: NextRequest) {
@@ -91,11 +105,15 @@ export async function GET(req: NextRequest) {
   const start = params.get("start") || defaultStartForTimeframe(timeframe);
   const end = params.get("end") || defaultEnd();
   const includeCsv = params.get("includeCsv") === "1" || params.get("includeCsv") === "true";
+  const pageDelayMs = Math.min(Math.max(Number(params.get("pageDelayMs") || (mode === "range" ? 150 : 0)), 0), 2000);
+  const maxRetries = Math.min(Math.max(Number(params.get("maxRetries") || (mode === "range" ? 3 : 1)), 0), 5);
 
   const allBars: AlpacaBar[] = [];
   let pageToken: string | null = null;
   let pages = 0;
-  const maxPages = mode === "range" ? 60 : 1;
+  let requestAttempts = 0;
+  let rateLimitRetries = 0;
+  const maxPages = mode === "range" ? 80 : 1;
 
   do {
     const url = new URL("https://data.alpaca.markets/v2/stocks/bars");
@@ -109,13 +127,27 @@ export async function GET(req: NextRequest) {
     url.searchParams.set("sort", mode === "latest" ? "desc" : "asc");
     if (pageToken) url.searchParams.set("page_token", pageToken);
 
-    const result = await fetchPage(url, key, secret);
+    let result = await fetchPage(url, key, secret, 1);
+    requestAttempts += 1;
+    let attempt = 1;
+    while (!result.ok && result.status === 429 && attempt <= maxRetries) {
+      rateLimitRetries += 1;
+      const retryDelay = Math.min(result.retryAfterMs ?? 0, 30_000) || Math.min(5000 * attempt, 30_000);
+      await sleep(retryDelay);
+      attempt += 1;
+      result = await fetchPage(url, key, secret, attempt);
+      requestAttempts += 1;
+    }
+
     if (!result.ok) {
       return NextResponse.json(
         {
           error: "Alpaca request failed.",
           status: result.status,
           details: result.json,
+          retryAfterMs: result.retryAfterMs ?? null,
+          requestAttempts,
+          rateLimitRetries,
         },
         { status: result.status }
       );
@@ -125,6 +157,7 @@ export async function GET(req: NextRequest) {
     allBars.push(...bars);
     pageToken = result.json?.next_page_token || null;
     pages += 1;
+    if (pageToken && pageDelayMs > 0) await sleep(pageDelayMs);
   } while (pageToken && pages < maxPages && allBars.length < limit * maxPages);
 
   const normalized = allBars
@@ -144,6 +177,8 @@ export async function GET(req: NextRequest) {
     count: sliced.length,
     totalFetched: allBars.length,
     pagesFetched: pages,
+    requestAttempts,
+    rateLimitRetries,
     truncated: Boolean(pageToken),
     firstTime: sliced[0]?.t || null,
     latestTime: latest?.t || null,
