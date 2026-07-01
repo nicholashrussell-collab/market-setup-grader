@@ -52,6 +52,7 @@ type BotControl = {
   open_end_minutes_et?: number;
   no_new_trades_first_minutes?: number;
   no_new_trades_last_minutes?: number;
+  no_overnight?: boolean;
 };
 
 type BotEvent = { id: string; created_at: string; event_type: string; message: string };
@@ -513,7 +514,7 @@ export default function AdminPage() {
           <section id="settings" className="dash-panel settings-panel-v80 settings-panel-v86 settings-panel-v87">
             <div className="panel-heading-row">
               <div><h2>Best-bot profile + guardrails</h2><p>These are the actual rules the cloud worker will use on the next run. Defaults match the 05/31 corrected best profile.</p></div>
-              <span className="small-pill">v9.3 broker-only</span>
+              <span className="small-pill">v9.7 broker-only</span>
             </div>
             <div className="settings-grid admin-settings-grid compact-settings-grid settings-grid-v86 settings-grid-v87">
               <label>Timeframe<select value={control.timeframe} onChange={(e) => update({ timeframe: e.target.value })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></label>
@@ -546,6 +547,7 @@ export default function AdminPage() {
               <label>Shorts<select value={control.allow_shorts ? "yes" : "no"} onChange={(e) => update({ allow_shorts: e.target.value === "yes", direction_filter: e.target.value === "yes" ? control.direction_filter : "Long" })}><option value="no">Blocked</option><option value="yes">Allowed</option></select></label>
               <label>Entry start ET<input type="number" value={control.open_start_minutes_et ?? 690} onChange={(e) => update({ open_start_minutes_et: Number(e.target.value) || 690 })} /></label>
               <label>Entry end ET<input type="number" value={control.open_end_minutes_et ?? 960} onChange={(e) => update({ open_end_minutes_et: Number(e.target.value) || 960 })} /></label>
+              <label>Overnight holds<select value={control.no_overnight === false ? "allowed" : "blocked"} onChange={(e) => update({ no_overnight: e.target.value === "blocked" })}><option value="blocked">Blocked: no overnight holds</option><option value="allowed">Allowed</option></select></label>
               <label>Max stale minutes<input type="number" value={control.max_stale_minutes} onChange={(e) => update({ max_stale_minutes: Number(e.target.value) || 30 })} /></label>
               <label>Stale simulation<select value={control.allow_stale_simulation ? "on" : "off"} onChange={(e) => update({ allow_stale_simulation: e.target.value === "on" })}><option value="off">OFF: block stale candles</option><option value="on">ON: paper test only</option></select></label>
             </div>

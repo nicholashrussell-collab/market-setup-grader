@@ -57,6 +57,7 @@ export type CloudBotSettings = {
   openEndMinutesEt: number;
   noNewTradesFirstMinutes: number;
   noNewTradesLastMinutes: number;
+  noOvernight: boolean;
   longOnly: boolean;
   allowStaleSimulation: boolean;
   scanLimit: number;
@@ -66,7 +67,7 @@ export type CloudBotSettings = {
   customSymbols?: string;
 };
 
-// v9.3: admin tracked symbols and guardrails are the source of truth for the cloud bot.
+// v9.7: admin tracked symbols and guardrails are the source of truth for the cloud bot.
 export const TRACKED_WATCHLIST_LABEL = "Tracked Symbols";
 
 export function parseSymbols(value: string, limit = 1000) {
@@ -148,6 +149,7 @@ export function getCloudBotSettings(): CloudBotSettings {
     openEndMinutesEt: envNumber("BOT_OPEN_END_MINUTES_ET", 16 * 60),
     noNewTradesFirstMinutes: envNumber("BOT_NO_NEW_TRADES_FIRST_MINUTES", 0),
     noNewTradesLastMinutes: envNumber("BOT_NO_NEW_TRADES_LAST_MINUTES", 0),
+    noOvernight: envBoolean("BOT_NO_OVERNIGHT", true),
     longOnly: directionFilter === "Long" || envBoolean("BOT_LONG_ONLY", true),
     allowStaleSimulation: envBoolean("BOT_ALLOW_STALE_SIMULATION", false),
     scanLimit,
@@ -205,6 +207,7 @@ export type BotControlRow = {
   open_end_minutes_et?: number;
   no_new_trades_first_minutes?: number;
   no_new_trades_last_minutes?: number;
+  no_overnight?: boolean;
 };
 
 function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): CloudBotSettings {
@@ -259,6 +262,7 @@ function applyControlRow(base: CloudBotSettings, row?: BotControlRow | null): Cl
     openEndMinutesEt: num(row.open_end_minutes_et, base.openEndMinutesEt),
     noNewTradesFirstMinutes: num(row.no_new_trades_first_minutes, base.noNewTradesFirstMinutes),
     noNewTradesLastMinutes: num(row.no_new_trades_last_minutes, base.noNewTradesLastMinutes),
+    noOvernight: bool(row.no_overnight, base.noOvernight),
     longOnly: directionFilter === "Long" || !allowShorts,
     customSymbols: symbolSource,
   };
@@ -294,7 +298,7 @@ export function defaultBotControlRow(): BotControlRow {
     max_stale_minutes: s.maxStaleMinutes,
     allow_stale_simulation: s.allowStaleSimulation,
     scan_limit: s.scanLimit,
-    notes: "Managed from v9.3 /admin. Broker-synced Paper Trading is the default execution route. Research Lab handles historical simulation/backtesting only.",
+    notes: "Managed from v9.7 /admin. Broker-synced Paper Trading is the default execution route. Research Lab handles historical simulation/backtesting only.",
     broker_mode: "Alpaca Paper",
     broker_paper_enabled: true,
     broker_live_enabled: false,
@@ -324,5 +328,6 @@ export function defaultBotControlRow(): BotControlRow {
     open_end_minutes_et: s.openEndMinutesEt,
     no_new_trades_first_minutes: s.noNewTradesFirstMinutes,
     no_new_trades_last_minutes: s.noNewTradesLastMinutes,
+    no_overnight: s.noOvernight,
   };
 }

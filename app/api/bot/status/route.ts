@@ -51,6 +51,7 @@ function settingsPayload(settings: Awaited<ReturnType<typeof getRuntimeCloudBotS
     allowShorts: settings.allowShorts,
     openStartMinutesEt: settings.openStartMinutesEt,
     openEndMinutesEt: settings.openEndMinutesEt,
+    noOvernight: settings.noOvernight,
   };
 }
 
