@@ -106,12 +106,14 @@ type ResearchForm = {
 type OpenPosition = { trade: JournalTrade; openedIndex: number; barsHeld: number; openedMs: number; lastCandle?: Candle };
 type EquityPoint = { time: string; value: number; r: number };
 type ChartPoint = { time: string; value: number };
+type FetchDiagnostic = { symbol: string; status: "loaded" | "insufficient" | "empty" | "failed"; candles: number; usable: boolean; firstTime?: string | null; latestTime?: string | null; pagesFetched?: number; truncated?: boolean; error?: string };
 type SymbolStats = { symbol: string; trades: number; wins: number; losses: number; totalR: number; positiveR: number; negativeR: number };
 type BucketStats = { label: string; trades: number; wins: number; totalR: number; positiveR: number; negativeR: number };
 type SimResult = {
   mode: "global-portfolio";
   symbolsTested: number;
   symbolsWithCandles: number;
+  symbolsUsable: number;
   candles: number;
   timelineBars: number;
   trades: JournalTrade[];
@@ -141,6 +143,7 @@ type SimResult = {
   worst: SymbolStats[];
   buckets: BucketStats[];
   recentErrors: string[];
+  fetchDiagnostics: FetchDiagnostic[];
 };
 
 const DEFAULTS = {
@@ -261,11 +264,28 @@ function barsUrl(symbol: string, timeframe: Timeframe, start: string, end: strin
   url.searchParams.set("limit", "10000");
   return `${url.pathname}${url.search}`;
 }
-async function fetchCandles(symbol: string, timeframe: Timeframe, start: string, end: string, warmupBars: number): Promise<Candle[]> {
+async function fetchCandleBundle(symbol: string, timeframe: Timeframe, start: string, end: string, warmupBars: number): Promise<{ candles: Candle[]; diagnostic: FetchDiagnostic }> {
   const res = await fetch(barsUrl(symbol, timeframe, start, end, warmupBars), { cache: "no-store" });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || JSON.stringify(data.details || data));
-  return (data.bars || []).sort((a: Candle, b: Candle) => new Date(a.time).getTime() - new Date(b.time).getTime());
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = data?.details ? ` ${JSON.stringify(data.details).slice(0, 220)}` : "";
+    throw new Error(`${data?.error || "Alpaca request failed."}${detail}`);
+  }
+  const candles = (data.bars || []).sort((a: Candle, b: Candle) => new Date(a.time).getTime() - new Date(b.time).getTime());
+  const usable = candles.length > Math.max(warmupBars, 50);
+  return {
+    candles,
+    diagnostic: {
+      symbol,
+      status: candles.length ? (usable ? "loaded" : "insufficient") : "empty",
+      candles: candles.length,
+      usable,
+      firstTime: data.firstTime || candles[0]?.time || null,
+      latestTime: data.latestTime || candles[candles.length - 1]?.time || null,
+      pagesFetched: Number(data.pagesFetched || 0),
+      truncated: Boolean(data.truncated),
+    },
+  };
 }
 function scoreBucket(score: number) {
   if (score < 60) return "Under 60";
@@ -346,7 +366,7 @@ function drawdownSeries(points: EquityPoint[]): ChartPoint[] {
   let peak = points[0]?.r || 0;
   return points.map((p) => { peak = Math.max(peak, p.r); return { time: p.time, value: Number((peak - p.r).toFixed(2)) }; });
 }
-function summarize(trades: JournalTrade[], form: ResearchForm, symbolsTested: number, symbolsWithCandles: number, candles: number, timelineBars: number, errors: string[], skipped: { maxOpen: number; maxRisk: number; maxNew: number; candidates: number }): SimResult {
+function summarize(trades: JournalTrade[], form: ResearchForm, symbolsTested: number, symbolsWithCandles: number, symbolsUsable: number, candles: number, timelineBars: number, errors: string[], fetchDiagnostics: FetchDiagnostic[], skipped: { maxOpen: number; maxRisk: number; maxNew: number; candidates: number }): SimResult {
   const wins = trades.filter((t) => t.status === "Win").length;
   const losses = trades.filter((t) => t.status === "Loss").length;
   const timeouts = trades.filter((t) => t.status === "Timeout").length;
@@ -382,6 +402,7 @@ function summarize(trades: JournalTrade[], form: ResearchForm, symbolsTested: nu
     mode: "global-portfolio",
     symbolsTested,
     symbolsWithCandles,
+    symbolsUsable,
     candles,
     timelineBars,
     trades,
@@ -410,7 +431,8 @@ function summarize(trades: JournalTrade[], form: ResearchForm, symbolsTested: nu
     best: [...symbolRows].sort((a, b) => b.totalR - a.totalR).slice(0, 10),
     worst: [...symbolRows].sort((a, b) => a.totalR - b.totalR).slice(0, 10),
     buckets: bucketRows,
-    recentErrors: errors.slice(-8),
+    recentErrors: errors.slice(-20),
+    fetchDiagnostics,
   };
 }
 
@@ -418,6 +440,21 @@ function SmallMetric({ label, value, helper }: { label: string; value: string | 
   return <div className="dash-tile info"><span>{label}</span><strong>{value}</strong>{helper ? <small>{helper}</small> : null}</div>;
 }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label>{label}{children}</label>; }
+
+function fetchDiagnosticCounts(rows: FetchDiagnostic[]) {
+  return rows.reduce((acc, row) => {
+    acc[row.status] = (acc[row.status] || 0) + 1;
+    if (row.truncated) acc.truncated += 1;
+    return acc;
+  }, { loaded: 0, insufficient: 0, empty: 0, failed: 0, truncated: 0 } as Record<FetchDiagnostic["status"] | "truncated", number>);
+}
+function rQualityLabel(score: number, slope: number) {
+  if (slope <= 0) return "Weak or negative R curve";
+  if (score >= 75) return "Strong smooth R growth";
+  if (score >= 50) return "Usable but still choppy";
+  if (score >= 25) return "Positive but unstable";
+  return "Very choppy R curve";
+}
 
 export default function ResearchPage() {
   const [form, setForm] = useState<ResearchForm>(() => defaultForm());
@@ -454,16 +491,21 @@ export default function ResearchPage() {
     setProgress({ running: true, current: 0, total: list.length, symbol: "", message: "Fetching candles...", phase: "fetch" });
     const bySymbol = new Map<string, Candle[]>();
     const errors: string[] = [];
+    const fetchDiagnostics: FetchDiagnostic[] = [];
     let candleCount = 0;
     for (let i = 0; i < list.length; i += 1) {
       const sym = list[i];
       setProgress({ running: true, current: i, total: list.length, symbol: sym, message: `Fetching ${sym} candles...`, phase: "fetch" });
       try {
-        const candles = await fetchCandles(sym, form.timeframe, form.start, form.end, form.warmupBars);
+        const { candles, diagnostic } = await fetchCandleBundle(sym, form.timeframe, form.start, form.end, form.warmupBars);
+        fetchDiagnostics.push(diagnostic);
         if (candles.length) { bySymbol.set(sym, candles); candleCount += candles.length; }
-        setProgress({ running: true, current: i + 1, total: list.length, symbol: sym, message: `${i + 1}/${list.length} fetched · ${sym}: ${candles.length} candles`, phase: "fetch" });
+        const statusText = diagnostic.truncated ? "truncated" : diagnostic.status;
+        setProgress({ running: true, current: i + 1, total: list.length, symbol: sym, message: `${i + 1}/${list.length} fetched · ${sym}: ${candles.length} candles · ${statusText}`, phase: "fetch" });
       } catch (err) {
-        errors.push(`${sym}: ${err instanceof Error ? err.message : "failed"}`);
+        const message = err instanceof Error ? err.message : "failed";
+        errors.push(`${sym}: ${message}`);
+        fetchDiagnostics.push({ symbol: sym, status: "failed", candles: 0, usable: false, error: message });
         setProgress({ running: true, current: i + 1, total: list.length, symbol: sym, message: `${i + 1}/${list.length} fetched · ${sym} failed`, phase: "fetch" });
       }
       await new Promise((resolve) => window.setTimeout(resolve, 0));
@@ -548,7 +590,7 @@ export default function ResearchPage() {
       const last = rows[rows.length - 1];
       if (last) trades.push({ ...pos.trade, status: "Timeout", resolvedAt: last.time || lastTime, resultR: Number(resultRAtClose(pos.trade, last.close).toFixed(2)), note: "Backtest: end of date range." });
     }
-    const result = summarize(trades, form, list.length, bySymbol.size, candleCount, timeline.length, errors, skipped);
+    const result = summarize(trades, form, list.length, bySymbol.size, fetchDiagnostics.filter((d) => d.usable).length, candleCount, timeline.length, errors, fetchDiagnostics, skipped);
     setSummary(result);
     setProgress({ running: false, current: timeline.length, total: timeline.length, symbol: "", message: `Complete: ${result.trades.length} trades · ${result.totalR.toFixed(2)}R`, phase: "done" });
     setStatus(`True portfolio backtest complete. ${result.trades.length} trades across ${new Set(result.trades.map((t) => t.symbol)).size} symbol(s).`);
@@ -559,11 +601,11 @@ export default function ResearchPage() {
       <div className="pro-app-shell">
         <aside className="viewer-sidebar">
           <div className="sidebar-brand"><div><strong>Research Lab</strong><small>Backtest control room</small></div></div>
-          <nav className="sidebar-nav"><Link href="/">Viewer</Link><Link href="/chart-desk">Chart Desk</Link><Link href="/positions">Positions</Link><Link href="/research">Research</Link><Link href="/admin">Admin</Link></nav>
+          <nav className="sidebar-nav"><Link href="/">Viewer</Link><Link href="/research">Research</Link><Link href="/admin">Admin</Link></nav>
           <div className="sidebar-system-card"><strong>True portfolio simulation</strong><small>One shared timeline. Max new trades/run and max open trades are enforced globally.</small></div>
         </aside>
         <section className="page-viewer-main">
-          <div className="viewer-topbar"><span className="eyebrow">v9.8 · Research only</span><h1>Backtest Control Room</h1><p>If the Admin bot had run these settings over the selected dates, what would the shared portfolio have done?</p><div className="hero-actions"><button onClick={loadAdminProfile} disabled={progress.running}>Load settings from Admin</button><button className="primary" onClick={run} disabled={progress.running}>{progress.running ? "Running..." : "Run portfolio backtest"}</button></div><p className="status-line">{status}</p>{error ? <p className="warning-box">{error}</p> : null}</div>
+          <div className="viewer-topbar"><span className="eyebrow">v9.9 · Research diagnostics</span><h1>Backtest Control Room</h1><p>If the Admin bot had run these settings over the selected dates, what would the shared portfolio have done?</p><div className="hero-actions"><button onClick={loadAdminProfile} disabled={progress.running}>Load settings from Admin</button><button className="primary" onClick={run} disabled={progress.running}>{progress.running ? "Running..." : "Run portfolio backtest"}</button></div><p className="status-line">{status}</p>{error ? <p className="warning-box">{error}</p> : null}</div>
           <div className="mini-grid wide"><SmallMetric label="Mode" value="Portfolio backtest" helper="Global Admin-style simulation" /><SmallMetric label="Date range" value={`${form.start} → ${form.end}`} helper="Historical candles" /><SmallMetric label="Universe" value={`${activeSymbols.length}/${symbols.length}`} helper="Scanned / saved symbols" /><SmallMetric label="Timeframe" value={form.timeframe} helper="Same concept as Admin" /><SmallMetric label="Target" value={form.targetMode === "FixedR" ? `${form.fixedTargetR}R` : form.targetMode} helper={`${form.targetMode} target mode`} /><SmallMetric label="Progress" value={progress.total ? `${progress.current}/${progress.total}` : "Idle"} helper={progress.message} /></div>
           <section className="panel"><div className="section-heading-row"><div><h2>Backtest window</h2><p className="muted small">These are the only fields Research adds on top of Admin settings.</p></div><span className="badge">Alpaca candles · no execution</span></div><div className="form-grid backtest-grid"><Field label="Start date"><input type="date" value={form.start} onChange={(e) => patch({ start: e.target.value })} /></Field><Field label="End date"><input type="date" value={form.end} onChange={(e) => patch({ end: e.target.value })} /></Field><Field label="Starting capital"><input type="number" value={form.startingCapital} onChange={(e) => patch({ startingCapital: num(e.target.value, form.startingCapital) })} /></Field></div><p className="muted small">Everything below mirrors Admin. Use “Load settings from Admin” to test the same controls over this date range.</p></section>
 
@@ -571,7 +613,7 @@ export default function ResearchPage() {
 
           <section className="panel"><div className="section-heading-row"><div><h2>Tracked symbols</h2><p className="muted small">The simulator scans from the top of this list, just like Admin.</p></div><span className="badge">{activeSymbols.length} active / {symbols.length} saved</span></div><textarea value={form.symbolsText} onChange={(e) => patch({ symbolsText: e.target.value })} /></section>
           <section className="panel"><h2>Progress</h2><div className="research-progress-track"><div style={{ width: `${progressPct}%` }} /></div><p className="status-line">{progress.total ? `${progress.current}/${progress.total} · ${progressPct}% · ${progress.message}` : progress.message}</p></section>
-          {summary ? <section className="panel backtest-results"><h2>Backtest results</h2><p className="muted small">This is now a true shared-portfolio simulation. The trade count is capped by max new trades/run, max open trades, cooldown, and risk controls across the whole universe.</p><div className="mini-grid wide"><SmallMetric label="Symbols loaded" value={`${summary.symbolsWithCandles}/${summary.symbolsTested}`} helper={`${summary.candles.toLocaleString()} candles`} /><SmallMetric label="Timeline bars" value={summary.timelineBars.toLocaleString()} helper="Shared scan times" /><SmallMetric label="Trades" value={summary.trades.length} helper={`${summary.wins} wins · ${summary.losses} losses · ${summary.timeouts} timeouts`} /><SmallMetric label="Win rate" value={pct(summary.winRate)} helper={`${pct(summary.trades.length ? (summary.losses / summary.trades.length) * 100 : 0)} losses`} /><SmallMetric label="Timeout rate" value={pct(summary.trades.length ? (summary.timeouts / summary.trades.length) * 100 : 0)} helper={`${fmt(summary.trades.filter((t) => t.status === "Timeout").reduce((x, t) => x + (t.resultR || 0), 0))} timeout R`} /><SmallMetric label="Total R" value={fmt(summary.totalR)} helper={`Avg ${fmt(summary.avgR)}R/trade`} /><SmallMetric label="Profit factor" value={displayPf(summary.profitFactor)} helper="Gross R ratio" /><SmallMetric label="Ending equity" value={`$${summary.endingEquity.toLocaleString()}`} helper={pct(summary.returnPct)} /><SmallMetric label="Max drawdown" value={`${fmt(summary.maxDrawdownR)}R`} helper={pct(summary.maxDrawdownPct)} /><SmallMetric label="R linearity" value={`${fmt(summary.rLinearity * 100, 1)}%`} helper={`Slope ${fmt(summary.rSlope, 3)}R/trade`} /><SmallMetric label="R quality" value={`${summary.rQuality}/100`} helper="Smooth positive R growth" /></div>{summary.maxDrawdownPct >= 100 ? <div className="warning-box">Risk warning: this backtest had an implied drawdown above 100%. The strategy may still have positive R, but this risk setting is not realistically survivable.</div> : summary.maxDrawdownPct >= 50 ? <div className="warning-box">Risk warning: implied drawdown is above 50%. Consider lower risk per trade or tighter portfolio caps.</div> : null}<div className="grid three diagnostic-grid"><ResearchLineChart title="Portfolio equity" helper="Simulated account value using selected risk settings." points={summary.equity.map((p) => ({ time: p.time, value: p.value }))} valuePrefix="$" /><ResearchLineChart title="Cumulative R" helper="Strategy performance independent of account size." points={summary.equity.map((p) => ({ time: p.time, value: p.r }))} valueSuffix="R" /><ResearchLineChart title="R drawdown" helper="Drop from the prior cumulative-R peak." points={drawdownSeries(summary.equity)} valueSuffix="R" /></div><div className="grid two diagnostic-grid"><div className="breakdown-card"><h3>Score buckets</h3><div className="table-wrap compact"><table><thead><tr><th>Bucket</th><th>Trades</th><th>Win rate</th><th>Avg R</th><th>Total R</th><th>PF</th></tr></thead><tbody>{summary.buckets.map((b) => <tr key={b.label}><td>{b.label}</td><td>{b.trades}</td><td>{pct(b.trades ? (b.wins / b.trades) * 100 : 0)}</td><td>{fmt(b.trades ? b.totalR / b.trades : 0)}</td><td>{fmt(b.totalR)}</td><td>{displayPf(profitFactor(b.positiveR, b.negativeR))}</td></tr>)}</tbody></table></div></div><div className="breakdown-card"><h3>Portfolio guardrails</h3><p className="muted small">Candidates seen: {summary.candidatesSeen.toLocaleString()}</p><p className="muted small">Skipped by max-open: {summary.skippedMaxOpen}</p><p className="muted small">Skipped by risk cap: {summary.skippedMaxRisk}</p><p className="muted small">Skipped by max-new/run: {summary.skippedMaxNewRun}</p><p className="muted small">Overnight holds: {form.noOvernight ? "Blocked" : "Allowed"}</p>{summary.recentErrors.length ? <div className="warning-box">Some symbols failed:<br />{summary.recentErrors.join("\n")}</div> : <p className="muted small">No recent fetch errors.</p>}</div></div><div className="grid two diagnostic-grid"><div className="breakdown-card"><h3>Best symbols</h3><ResultTable rows={summary.best} /></div><div className="breakdown-card"><h3>Worst symbols</h3><ResultTable rows={summary.worst} /></div></div></section> : null}
+          {summary ? <section className="panel backtest-results"><h2>Backtest results</h2><p className="muted small">This is now a true shared-portfolio simulation. The trade count is capped by max new trades/run, max open trades, cooldown, and risk controls across the whole universe.</p><div className="mini-grid wide"><SmallMetric label="Symbols loaded" value={`${summary.symbolsWithCandles}/${summary.symbolsTested}`} helper={`${summary.symbolsUsable} usable · ${summary.candles.toLocaleString()} candles`} /><SmallMetric label="Timeline bars" value={summary.timelineBars.toLocaleString()} helper="Shared scan times" /><SmallMetric label="Trades" value={summary.trades.length} helper={`${summary.wins} wins · ${summary.losses} losses · ${summary.timeouts} timeouts`} /><SmallMetric label="Win rate" value={pct(summary.winRate)} helper={`${pct(summary.trades.length ? (summary.losses / summary.trades.length) * 100 : 0)} losses`} /><SmallMetric label="Timeout rate" value={pct(summary.trades.length ? (summary.timeouts / summary.trades.length) * 100 : 0)} helper={`${fmt(summary.trades.filter((t) => t.status === "Timeout").reduce((x, t) => x + (t.resultR || 0), 0))} timeout R`} /><SmallMetric label="Total R" value={fmt(summary.totalR)} helper={`Avg ${fmt(summary.avgR)}R/trade`} /><SmallMetric label="Profit factor" value={displayPf(summary.profitFactor)} helper="Gross R ratio" /><SmallMetric label="Ending equity" value={`$${summary.endingEquity.toLocaleString()}`} helper={pct(summary.returnPct)} /><SmallMetric label="Max drawdown" value={`${fmt(summary.maxDrawdownR)}R`} helper={pct(summary.maxDrawdownPct)} /><SmallMetric label="R linearity" value={`${fmt(summary.rLinearity * 100, 1)}%`} helper={`Slope ${fmt(summary.rSlope, 3)}R/trade`} /><SmallMetric label="R quality" value={`${summary.rQuality}/100`} helper={rQualityLabel(summary.rQuality, summary.rSlope)} /></div>{summary.maxDrawdownPct >= 100 ? <div className="warning-box">Risk warning: this backtest had an implied drawdown above 100%. The strategy may still have positive R, but this risk setting is not realistically survivable.</div> : summary.maxDrawdownPct >= 50 ? <div className="warning-box">Risk warning: implied drawdown is above 50%. Consider lower risk per trade or tighter portfolio caps.</div> : null}<div className="grid three diagnostic-grid"><ResearchLineChart title="Portfolio equity" helper="Simulated account value using selected risk settings." points={summary.equity.map((p) => ({ time: p.time, value: p.value }))} valuePrefix="$" /><ResearchLineChart title="Cumulative R" helper="Strategy performance independent of account size." points={summary.equity.map((p) => ({ time: p.time, value: p.r }))} valueSuffix="R" /><ResearchLineChart title="R drawdown" helper="Drop from the prior cumulative-R peak." points={drawdownSeries(summary.equity)} valueSuffix="R" /></div><div className="grid two diagnostic-grid"><div className="breakdown-card"><h3>Score buckets</h3><div className="table-wrap compact"><table><thead><tr><th>Bucket</th><th>Trades</th><th>Win rate</th><th>Avg R</th><th>Total R</th><th>PF</th></tr></thead><tbody>{summary.buckets.map((b) => <tr key={b.label}><td>{b.label}</td><td>{b.trades}</td><td>{pct(b.trades ? (b.wins / b.trades) * 100 : 0)}</td><td>{fmt(b.trades ? b.totalR / b.trades : 0)}</td><td>{fmt(b.totalR)}</td><td>{displayPf(profitFactor(b.positiveR, b.negativeR))}</td></tr>)}</tbody></table></div></div><div className="breakdown-card"><h3>Portfolio guardrails</h3><p className="muted small">Candidates seen: {summary.candidatesSeen.toLocaleString()}</p><p className="muted small">Skipped by max-open: {summary.skippedMaxOpen}</p><p className="muted small">Skipped by risk cap: {summary.skippedMaxRisk}</p><p className="muted small">Skipped by max-new/run: {summary.skippedMaxNewRun}</p><p className="muted small">Overnight holds: {form.noOvernight ? "Blocked" : "Allowed"}</p>{summary.recentErrors.length ? <div className="warning-box">Some symbols failed:<br />{summary.recentErrors.join("\n")}</div> : <p className="muted small">No recent fetch errors.</p>}</div></div><FetchDiagnosticsPanel diagnostics={summary.fetchDiagnostics} /><div className="grid two diagnostic-grid"><div className="breakdown-card"><h3>Best symbols</h3><ResultTable rows={summary.best} /></div><div className="breakdown-card"><h3>Worst symbols</h3><ResultTable rows={summary.worst} /></div></div></section> : null}
         </section>
         <aside className="viewer-inspector-v88"><div className="rail-title-v88"><span>Research rail</span><h2>True Admin-style test</h2><p>Backtests one shared portfolio instead of independent per-symbol tests.</p></div><div className="rail-card-v88 dash-panel"><h2>Current test</h2><div className="rail-stack-v88"><div className="rail-row-v88 info"><span>Profile</span><strong>{form.gradeProfile} · {form.directionFilter}</strong><small>{form.strategyEngine}</small></div><div className="rail-row-v88 info"><span>Window</span><strong>{form.start} → {form.end}</strong><small>{form.timeframe} candles</small></div><div className="rail-row-v88 info"><span>Session</span><strong>{minutesToEt(form.entryStart)} → {minutesToEt(form.entryEnd)}</strong><small>{form.sessionFilter}</small></div><div className="rail-row-v88 info"><span>Overnight</span><strong>{form.noOvernight ? "Blocked" : "Allowed"}</strong><small>{form.noOvernight ? "EOD timeout exits" : "Can hold across sessions"}</small></div><div className="rail-row-v88 good"><span>Safety</span><strong>Backtest only</strong><small>No orders. No Admin changes.</small></div></div></div><div className="rail-card-v88 dash-panel"><h2>Progress</h2><strong>{progress.total ? `${progress.current}/${progress.total}` : "Idle"}</strong><p className="muted small">{progress.message}</p><div className="research-progress-track"><div style={{ width: `${progressPct}%` }} /></div></div><div className="rail-card-v88 dash-panel"><h2>Result focus</h2><p className="muted small">This should answer whether the Admin bot could have actually taken those trades with one shared portfolio and max 1 new trade/run.</p></div></aside>
       </div>
@@ -595,6 +637,22 @@ function ResearchLineChart({ title, helper, points, valuePrefix = "", valueSuffi
   const last = clean[clean.length - 1]?.value ?? 0;
   return <div className="breakdown-card research-chart-card"><div className="chart-head"><div><h3>{title}</h3>{helper ? <p className="muted small">{helper}</p> : null}</div><strong>{valuePrefix}{Number(last).toLocaleString(undefined, { maximumFractionDigits: 2 })}{valueSuffix}</strong></div><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title} className="research-chart"><line x1={pad} y1={height - pad} x2={width - pad} y2={height - pad} /><line x1={pad} y1={pad} x2={pad} y2={height - pad} /><polyline points={path} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg><div className="chart-scale"><span>{valuePrefix}{max.toFixed(2)}{valueSuffix}</span><span>{valuePrefix}{min.toFixed(2)}{valueSuffix}</span></div></div>;
 }
+function FetchDiagnosticsPanel({ diagnostics }: { diagnostics: FetchDiagnostic[] }) {
+  const counts = fetchDiagnosticCounts(diagnostics);
+  const failed = diagnostics.filter((d) => d.status === "failed");
+  const empty = diagnostics.filter((d) => d.status === "empty");
+  const insufficient = diagnostics.filter((d) => d.status === "insufficient");
+  const truncated = diagnostics.filter((d) => d.truncated);
+  const largest = diagnostics.filter((d) => d.candles > 0).sort((a, b) => b.candles - a.candles).slice(0, 8);
+  return <div className="breakdown-card diagnostic-grid fetch-diagnostics-card">
+    <div className="section-heading-row"><div><h3>Candle loading diagnostics</h3><p className="muted small">This explains why a long test may say 499 active symbols but only a smaller number loaded or usable.</p></div><span className="badge">{diagnostics.length} requested</span></div>
+    <div className="mini-grid wide"><SmallMetric label="Loaded" value={counts.loaded} helper="Enough candles for warmup" /><SmallMetric label="Insufficient" value={counts.insufficient} helper="Fetched, but too few bars" /><SmallMetric label="Empty" value={counts.empty} helper="No bars returned" /><SmallMetric label="Failed" value={counts.failed} helper="Request/API error" /><SmallMetric label="Truncated" value={counts.truncated} helper="Page cap hit" /></div>
+    {truncated.length ? <div className="warning-box">Some symbols were truncated by the Alpaca pagination cap. Shorten the date range, use fewer symbols, or test in chunks.<br />{truncated.slice(0, 12).map((d) => `${d.symbol}: ${d.candles.toLocaleString()} candles`).join("\n")}</div> : null}
+    {failed.length || empty.length || insufficient.length ? <div className="table-wrap compact"><table><thead><tr><th>Symbol</th><th>Status</th><th>Candles</th><th>Pages</th><th>First</th><th>Latest</th><th>Reason</th></tr></thead><tbody>{[...failed, ...empty, ...insufficient].slice(0, 40).map((d) => <tr key={`${d.symbol}-${d.status}`}><td>{d.symbol}</td><td>{d.status}</td><td>{d.candles.toLocaleString()}</td><td>{d.pagesFetched || 0}</td><td>{d.firstTime ? d.firstTime.slice(0, 10) : "—"}</td><td>{d.latestTime ? d.latestTime.slice(0, 10) : "—"}</td><td>{d.error || (d.status === "insufficient" ? "Below warmup requirement" : d.status === "empty" ? "No bars returned by feed" : "—")}</td></tr>)}</tbody></table></div> : <p className="muted small">All requested symbols loaded usable candles.</p>}
+    {largest.length ? <p className="muted small">Largest loaded symbols: {largest.map((d) => `${d.symbol} ${d.candles.toLocaleString()}`).join(" · ")}</p> : null}
+  </div>;
+}
+
 function ResultTable({ rows }: { rows: SymbolStats[] }) {
   return <div className="table-wrap compact"><table><thead><tr><th>Symbol</th><th>Trades</th><th>Win</th><th>Total R</th><th>Avg R</th><th>PF</th></tr></thead><tbody>{rows.map((r) => <tr key={r.symbol}><td>{r.symbol}</td><td>{r.trades}</td><td>{pct(r.trades ? (r.wins / r.trades) * 100 : 0)}</td><td>{fmt(r.totalR)}</td><td>{fmt(r.trades ? r.totalR / r.trades : 0)}</td><td>{displayPf(profitFactor(r.positiveR, r.negativeR))}</td></tr>)}</tbody></table></div>;
 }

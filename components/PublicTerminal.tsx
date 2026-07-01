@@ -350,10 +350,6 @@ export default function PublicTerminal({ activeView = "overview" }: { activeView
           <nav className="sidebar-nav route-nav">
             {navItems.map((item) => <Link key={item.id} href={item.id === "chart" ? `${item.href}?symbol=${selectedSymbol}` : item.href} className={activeView === item.id ? "active" : ""}><span>{item.label}</span><small>{item.helper}</small></Link>)}
           </nav>
-          <div className="sidebar-system-card viewer-orientation-card-v88">
-            <span className="state-dot info" />
-            <div><strong>Fixed monitor layout</strong><small>Left navigation, center dashboard, right status rail.</small></div>
-          </div>
           <div className="sidebar-system-card">
             <span className={`state-dot ${botEngineRunning ? "good" : "warn"}`} />
             <div><strong>{botEngineRunning ? "Engine running" : "Engine paused"}</strong><small>{tradeArmed ? "Trade entries armed" : "Trade entries disarmed"}</small></div>

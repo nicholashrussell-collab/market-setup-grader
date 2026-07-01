@@ -90,6 +90,7 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Number(params.get("limit") || (mode === "range" ? 10000 : 250)), 10000);
   const start = params.get("start") || defaultStartForTimeframe(timeframe);
   const end = params.get("end") || defaultEnd();
+  const includeCsv = params.get("includeCsv") === "1" || params.get("includeCsv") === "true";
 
   const allBars: AlpacaBar[] = [];
   let pageToken: string | null = null;
@@ -154,6 +155,6 @@ export async function GET(req: NextRequest) {
       close: b.c,
       volume: b.v ?? 0,
     })),
-    csv: toCsv(sliced),
+    ...(includeCsv || mode === "latest" ? { csv: toCsv(sliced) } : {}),
   });
 }
