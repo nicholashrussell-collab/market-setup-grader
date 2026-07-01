@@ -10,6 +10,8 @@ import {
   GradeProfile,
   JournalTrade,
   LeaderExitMode,
+  TargetMode,
+  RiskModel,
   RealisticAccountType,
   RegimeFilter,
   SessionFilter,
@@ -28,7 +30,10 @@ type BotSettings = {
   maxScore?: number;
   minRR?: number;
   scanLimit?: number;
+  targetMode?: TargetMode;
   riskPct?: number;
+  riskModel?: RiskModel;
+  fixedRiskDollars?: number;
   maxOpenPositions?: number;
   maxNewTradesPerRun?: number;
   maxTotalOpenRiskPct?: number;
@@ -50,6 +55,8 @@ type BotSettings = {
   allowShorts?: boolean;
   openStartMinutesEt?: number;
   openEndMinutesEt?: number;
+  maxStaleMinutes?: number;
+  allowStaleSimulation?: boolean;
 };
 
 type BotStatus = { ok: boolean; settings?: BotSettings };
@@ -65,8 +72,11 @@ type ResearchForm = {
   minScore: number;
   maxScore: number;
   minRR: number;
+  targetMode: TargetMode;
   fixedTargetR: number;
+  riskModel: RiskModel;
   riskPct: number;
+  fixedRiskDollars: number;
   maxOpenTrades: number;
   maxNewTradesPerRun: number;
   maxTotalOpenRiskPct: number;
@@ -76,6 +86,8 @@ type ResearchForm = {
   maxPositionPct: number;
   entryStart: number;
   entryEnd: number;
+  maxStaleMinutes: number;
+  allowStaleSimulation: boolean;
   gradeProfile: GradeProfile;
   directionFilter: DirectionFilter;
   regimeFilter: RegimeFilter;
@@ -130,21 +142,26 @@ const DEFAULTS = {
   start: "2026-05-31",
   end: new Date().toISOString().slice(0, 10),
   startingCapital: 100000,
-  scanLimit: 100,
+  scanLimit: 499,
   minScore: 60,
   maxScore: 100,
   minRR: 1,
   fixedTargetR: 2.5,
-  riskPct: 0.25,
-  maxOpenTrades: 4,
+  targetMode: "FixedR" as TargetMode,
+  riskModel: "Percent" as RiskModel,
+  riskPct: 1,
+  fixedRiskDollars: 50,
+  maxOpenTrades: 10,
   maxNewTradesPerRun: 1,
-  maxTotalOpenRiskPct: 2,
-  cooldownMinutes: 60,
+  maxTotalOpenRiskPct: 10,
+  cooldownMinutes: 30,
   maxBarsToHold: 120,
   warmupBars: 200,
   maxPositionPct: 25,
   entryStart: 690,
   entryEnd: 960,
+  maxStaleMinutes: 30,
+  allowStaleSimulation: false,
 };
 
 function defaultForm(): ResearchForm {
@@ -158,8 +175,11 @@ function defaultForm(): ResearchForm {
     minScore: DEFAULTS.minScore,
     maxScore: DEFAULTS.maxScore,
     minRR: DEFAULTS.minRR,
+    targetMode: DEFAULTS.targetMode,
     fixedTargetR: DEFAULTS.fixedTargetR,
+    riskModel: DEFAULTS.riskModel,
     riskPct: DEFAULTS.riskPct,
+    fixedRiskDollars: DEFAULTS.fixedRiskDollars,
     maxOpenTrades: DEFAULTS.maxOpenTrades,
     maxNewTradesPerRun: DEFAULTS.maxNewTradesPerRun,
     maxTotalOpenRiskPct: DEFAULTS.maxTotalOpenRiskPct,
@@ -169,6 +189,8 @@ function defaultForm(): ResearchForm {
     maxPositionPct: DEFAULTS.maxPositionPct,
     entryStart: DEFAULTS.entryStart,
     entryEnd: DEFAULTS.entryEnd,
+    maxStaleMinutes: DEFAULTS.maxStaleMinutes,
+    allowStaleSimulation: DEFAULTS.allowStaleSimulation,
     gradeProfile: "Pullback",
     directionFilter: "Long",
     regimeFilter: "Off",
@@ -197,6 +219,11 @@ function minutesToEt(minutes: number) {
   const suffix = h24 >= 12 ? "PM" : "AM";
   const h = h24 % 12 || 12;
   return `${h}:${String(m).padStart(2, "0")} ${suffix} ET`;
+}
+function effectiveRiskPct(form: Pick<ResearchForm, "riskModel" | "riskPct" | "fixedRiskDollars" | "startingCapital">) {
+  return form.riskModel === "Fixed"
+    ? form.startingCapital > 0 ? (form.fixedRiskDollars / form.startingCapital) * 100 : 0
+    : form.riskPct;
 }
 function etMinutes(value: string) {
   const d = new Date(value);
@@ -279,11 +306,12 @@ function summarize(trades: JournalTrade[], form: ResearchForm, symbolsTested: nu
   const totalR = trades.reduce((s, t) => s + (t.resultR || 0), 0);
   const positiveR = trades.reduce((s, t) => s + Math.max(0, t.resultR || 0), 0);
   const negativeR = trades.reduce((s, t) => s + Math.min(0, t.resultR || 0), 0);
+  const perTradeRiskPct = effectiveRiskPct(form);
   let runningR = 0;
   const equity: EquityPoint[] = [{ time: form.start, value: form.startingCapital, r: 0 }];
   for (const t of [...trades].sort((a, b) => new Date(a.resolvedAt || a.signalTime).getTime() - new Date(b.resolvedAt || b.signalTime).getTime())) {
     runningR += t.resultR || 0;
-    equity.push({ time: t.resolvedAt || t.signalTime, r: Number(runningR.toFixed(2)), value: Number((form.startingCapital * (1 + (runningR * form.riskPct) / 100)).toFixed(2)) });
+    equity.push({ time: t.resolvedAt || t.signalTime, r: Number(runningR.toFixed(2)), value: Number((form.startingCapital * (1 + (runningR * perTradeRiskPct) / 100)).toFixed(2)) });
   }
   const endingEquity = equity[equity.length - 1]?.value || form.startingCapital;
   const ddR = maxDd(equity.map((p) => p.r));
@@ -358,7 +386,7 @@ export default function ResearchPage() {
       patch({
         timeframe: s.timeframe || form.timeframe,
         symbolsText: s.customSymbols || (s.symbolsList || []).join(", ") || DEFAULT_TRACKED_SYMBOLS,
-        scanLimit: num(s.scanLimit, form.scanLimit), minScore: num(s.minScore, form.minScore), maxScore: num(s.maxScore, form.maxScore), minRR: num(s.minRR, form.minRR), fixedTargetR: num(s.fixedTargetR, form.fixedTargetR), riskPct: num(s.riskPct, form.riskPct), maxOpenTrades: num(s.maxOpenPositions, form.maxOpenTrades), maxNewTradesPerRun: num(s.maxNewTradesPerRun, form.maxNewTradesPerRun), maxTotalOpenRiskPct: num(s.maxTotalOpenRiskPct, form.maxTotalOpenRiskPct), cooldownMinutes: num(s.cooldownMinutes, form.cooldownMinutes), maxBarsToHold: num(s.maxBarsToHold, form.maxBarsToHold), warmupBars: num(s.warmupBars, form.warmupBars), maxPositionPct: num(s.maxPositionPct, form.maxPositionPct), entryStart: num(s.openStartMinutesEt, form.entryStart), entryEnd: num(s.openEndMinutesEt, form.entryEnd),
+        scanLimit: num(s.scanLimit, form.scanLimit), minScore: num(s.minScore, form.minScore), maxScore: num(s.maxScore, form.maxScore), minRR: num(s.minRR, form.minRR), targetMode: s.targetMode || form.targetMode, fixedTargetR: num(s.fixedTargetR, form.fixedTargetR), riskModel: s.riskModel || form.riskModel, riskPct: num(s.riskPct, form.riskPct), fixedRiskDollars: num(s.fixedRiskDollars, form.fixedRiskDollars), maxOpenTrades: num(s.maxOpenPositions, form.maxOpenTrades), maxNewTradesPerRun: num(s.maxNewTradesPerRun, form.maxNewTradesPerRun), maxTotalOpenRiskPct: num(s.maxTotalOpenRiskPct, form.maxTotalOpenRiskPct), cooldownMinutes: num(s.cooldownMinutes, form.cooldownMinutes), maxBarsToHold: num(s.maxBarsToHold, form.maxBarsToHold), warmupBars: num(s.warmupBars, form.warmupBars), maxPositionPct: num(s.maxPositionPct, form.maxPositionPct), entryStart: num(s.openStartMinutesEt, form.entryStart), entryEnd: num(s.openEndMinutesEt, form.entryEnd), maxStaleMinutes: num(s.maxStaleMinutes, form.maxStaleMinutes), allowStaleSimulation: typeof s.allowStaleSimulation === "boolean" ? s.allowStaleSimulation : form.allowStaleSimulation,
         gradeProfile: s.gradeProfile || form.gradeProfile, directionFilter: s.directionFilter || form.directionFilter, regimeFilter: s.regimeFilter || form.regimeFilter, sessionFilter: s.sessionFilter || form.sessionFilter, setupTypeFilter: s.setupTypeFilter || form.setupTypeFilter, strategyEngine: s.strategyEngine || form.strategyEngine, leaderExitMode: s.leaderExitMode || form.leaderExitMode, accountType: s.accountType || form.accountType, marginMultiplier: num(s.marginMultiplier, form.marginMultiplier), allowFractionalShares: typeof s.allowFractionalShares === "boolean" ? s.allowFractionalShares : form.allowFractionalShares, allowShorts: typeof s.allowShorts === "boolean" ? s.allowShorts : form.allowShorts,
       });
       setStatus("Loaded current Admin-style settings. Choose date range, then run the portfolio backtest.");
@@ -429,7 +457,7 @@ export default function ResearchPage() {
         if (!rows || idx === undefined || idx < Math.max(form.warmupBars, 50)) continue;
         const contextBars = form.strategyEngine === "UniversalAdaptiveProV5" || form.strategyEngine === "UniversalAdaptiveProV6" ? 4000 : 1000;
         const window = rows.slice(Math.max(0, idx - contextBars + 1), idx + 1);
-        const grade = gradeSetup(window, form.timeframe, new Date(time), { mode: "FixedR", fixedR: form.fixedTargetR, atrMultiple: 2 }, { profile: form.gradeProfile });
+        const grade = gradeSetup(window, form.timeframe, new Date(time), { mode: form.targetMode, fixedR: form.fixedTargetR, atrMultiple: 2 }, { profile: form.gradeProfile });
         if (!grade || grade.bias === "Neutral") continue;
         if (grade.score < form.minScore || grade.score > form.maxScore || grade.rr < form.minRR) continue;
         if (form.directionFilter !== "All" && grade.bias !== form.directionFilter) continue;
@@ -440,7 +468,8 @@ export default function ResearchPage() {
       }
       skipped.candidates += candidates.length;
       candidates.sort((a, b) => b.score - a.score || b.rr - a.rr || a.symbol.localeCompare(b.symbol));
-      const allowedByRisk = Math.floor(form.maxTotalOpenRiskPct > 0 && form.riskPct > 0 ? form.maxTotalOpenRiskPct / form.riskPct : 9999);
+      const perTradeRiskPct = effectiveRiskPct(form);
+    const allowedByRisk = Math.floor(form.maxTotalOpenRiskPct > 0 && perTradeRiskPct > 0 ? form.maxTotalOpenRiskPct / perTradeRiskPct : 9999);
       let openedThisRun = 0;
       for (const candidate of candidates) {
         if (openedThisRun >= form.maxNewTradesPerRun) { skipped.maxNew += candidates.length - openedThisRun; break; }
@@ -476,10 +505,12 @@ export default function ResearchPage() {
           <div className="sidebar-system-card"><strong>True portfolio simulation</strong><small>One shared timeline. Max new trades/run and max open trades are enforced globally.</small></div>
         </aside>
         <section className="page-viewer-main">
-          <div className="viewer-topbar"><span className="eyebrow">v9.5 · Research only</span><h1>Backtest Control Room</h1><p>If the Admin bot had run these settings over the selected dates, what would the shared portfolio have done?</p><div className="hero-actions"><button onClick={loadAdminProfile} disabled={progress.running}>Reload Admin-style profile</button><button className="primary" onClick={run} disabled={progress.running}>{progress.running ? "Running..." : "Run portfolio backtest"}</button></div><p className="status-line">{status}</p>{error ? <p className="warning-box">{error}</p> : null}</div>
-          <div className="mini-grid wide"><SmallMetric label="Mode" value="Portfolio backtest" helper="Global Admin-style simulation" /><SmallMetric label="Date range" value={`${form.start} → ${form.end}`} helper="Historical candles" /><SmallMetric label="Universe" value={`${activeSymbols.length}/${symbols.length}`} helper="Scanned / saved symbols" /><SmallMetric label="Timeframe" value={form.timeframe} helper="Same concept as Admin" /><SmallMetric label="Target" value={`${form.fixedTargetR}R`} helper="Fixed target mode" /><SmallMetric label="Progress" value={progress.total ? `${progress.current}/${progress.total}` : "Idle"} helper={progress.message} /></div>
-          <section className="panel"><div className="section-heading-row"><div><h2>Backtest setup</h2><p className="muted small">This mirrors Admin controls, but runs them through a historical shared-portfolio simulator.</p></div><span className="badge">Alpaca candles · no execution</span></div><div className="form-grid backtest-grid"><Field label="Start date"><input type="date" value={form.start} onChange={(e) => patch({ start: e.target.value })} /></Field><Field label="End date"><input type="date" value={form.end} onChange={(e) => patch({ end: e.target.value })} /></Field><Field label="Starting capital"><input type="number" value={form.startingCapital} onChange={(e) => patch({ startingCapital: num(e.target.value, form.startingCapital) })} /></Field><Field label="Timeframe"><select value={form.timeframe} onChange={(e) => patch({ timeframe: e.target.value as Timeframe })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></Field><Field label="Scan limit"><input type="number" value={form.scanLimit} onChange={(e) => patch({ scanLimit: num(e.target.value, form.scanLimit) })} /></Field><Field label="Min score"><input type="number" value={form.minScore} onChange={(e) => patch({ minScore: num(e.target.value, form.minScore) })} /></Field><Field label="Max score"><input type="number" value={form.maxScore} onChange={(e) => patch({ maxScore: num(e.target.value, form.maxScore) })} /></Field><Field label="Min R/R"><input type="number" step="0.1" value={form.minRR} onChange={(e) => patch({ minRR: num(e.target.value, form.minRR) })} /></Field><Field label="Fixed target R"><input type="number" step="0.1" value={form.fixedTargetR} onChange={(e) => patch({ fixedTargetR: num(e.target.value, form.fixedTargetR) })} /></Field><Field label="Risk per trade %"><input type="number" step="0.05" value={form.riskPct} onChange={(e) => patch({ riskPct: num(e.target.value, form.riskPct) })} /></Field><Field label="Max open trades"><input type="number" value={form.maxOpenTrades} onChange={(e) => patch({ maxOpenTrades: num(e.target.value, form.maxOpenTrades) })} /></Field><Field label="Max new trades/run"><input type="number" value={form.maxNewTradesPerRun} onChange={(e) => patch({ maxNewTradesPerRun: num(e.target.value, form.maxNewTradesPerRun) })} /></Field><Field label="Max total open risk %"><input type="number" step="0.5" value={form.maxTotalOpenRiskPct} onChange={(e) => patch({ maxTotalOpenRiskPct: num(e.target.value, form.maxTotalOpenRiskPct) })} /></Field><Field label="Cooldown minutes"><input type="number" value={form.cooldownMinutes} onChange={(e) => patch({ cooldownMinutes: num(e.target.value, form.cooldownMinutes) })} /></Field><Field label="Max bars to hold"><input type="number" value={form.maxBarsToHold} onChange={(e) => patch({ maxBarsToHold: num(e.target.value, form.maxBarsToHold) })} /></Field><Field label="Warmup bars"><input type="number" value={form.warmupBars} onChange={(e) => patch({ warmupBars: num(e.target.value, form.warmupBars) })} /></Field></div></section>
-          <section className="panel"><h2>Strategy rules</h2><div className="form-grid backtest-grid"><Field label="Grader profile"><select value={form.gradeProfile} onChange={(e) => patch({ gradeProfile: e.target.value as GradeProfile })}><option>Pullback</option><option>Balanced</option><option>Breakout</option></select></Field><Field label="Direction"><select value={form.directionFilter} onChange={(e) => patch({ directionFilter: e.target.value as DirectionFilter })}><option value="Long">Long Only</option><option value="Short">Short Only</option><option value="All">All</option></select></Field><Field label="Session filter"><select value={form.sessionFilter} onChange={(e) => patch({ sessionFilter: e.target.value as SessionFilter })}><option>MiddayAfternoon</option><option>RegularHours</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>All</option></select></Field><Field label="Strategy engine"><select value={form.strategyEngine} onChange={(e) => patch({ strategyEngine: e.target.value as StrategyEngine })}><option>UniversalAdaptiveProV3</option><option>UniversalAdaptiveProV4</option><option>UniversalAdaptiveProV5</option><option>UniversalAdaptiveProV6</option><option>Manual</option></select></Field><Field label="Regime filter"><select value={form.regimeFilter} onChange={(e) => patch({ regimeFilter: e.target.value as RegimeFilter })}><option>Off</option><option>BlockLongBear</option><option>LongBullOnly</option><option>ShortBearOnly</option><option>LongBullShortBear</option></select></Field><Field label="Setup type"><select value={form.setupTypeFilter} onChange={(e) => patch({ setupTypeFilter: e.target.value as SetupTypeFilter })}><option>AdaptiveBest</option><option>Pullback</option><option>Continuation</option><option>ContinuationPullback</option><option>ExcludeBreakoutChase</option><option>All</option></select></Field><Field label="Entry start"><input type="number" value={form.entryStart} onChange={(e) => patch({ entryStart: num(e.target.value, form.entryStart) })} /></Field><Field label="Entry end"><input type="number" value={form.entryEnd} onChange={(e) => patch({ entryEnd: num(e.target.value, form.entryEnd) })} /></Field></div><p className="muted small">Entry window: {minutesToEt(form.entryStart)} to {minutesToEt(form.entryEnd)}. The simulator only opens new trades inside this ET window.</p></section>
+          <div className="viewer-topbar"><span className="eyebrow">v9.6 · Research only</span><h1>Backtest Control Room</h1><p>If the Admin bot had run these settings over the selected dates, what would the shared portfolio have done?</p><div className="hero-actions"><button onClick={loadAdminProfile} disabled={progress.running}>Load settings from Admin</button><button className="primary" onClick={run} disabled={progress.running}>{progress.running ? "Running..." : "Run portfolio backtest"}</button></div><p className="status-line">{status}</p>{error ? <p className="warning-box">{error}</p> : null}</div>
+          <div className="mini-grid wide"><SmallMetric label="Mode" value="Portfolio backtest" helper="Global Admin-style simulation" /><SmallMetric label="Date range" value={`${form.start} → ${form.end}`} helper="Historical candles" /><SmallMetric label="Universe" value={`${activeSymbols.length}/${symbols.length}`} helper="Scanned / saved symbols" /><SmallMetric label="Timeframe" value={form.timeframe} helper="Same concept as Admin" /><SmallMetric label="Target" value={form.targetMode === "FixedR" ? `${form.fixedTargetR}R` : form.targetMode} helper={`${form.targetMode} target mode`} /><SmallMetric label="Progress" value={progress.total ? `${progress.current}/${progress.total}` : "Idle"} helper={progress.message} /></div>
+          <section className="panel"><div className="section-heading-row"><div><h2>Backtest window</h2><p className="muted small">These are the only fields Research adds on top of Admin settings.</p></div><span className="badge">Alpaca candles · no execution</span></div><div className="form-grid backtest-grid"><Field label="Start date"><input type="date" value={form.start} onChange={(e) => patch({ start: e.target.value })} /></Field><Field label="End date"><input type="date" value={form.end} onChange={(e) => patch({ end: e.target.value })} /></Field><Field label="Starting capital"><input type="number" value={form.startingCapital} onChange={(e) => patch({ startingCapital: num(e.target.value, form.startingCapital) })} /></Field></div><p className="muted small">Everything below mirrors Admin. Use “Load settings from Admin” to test the same controls over this date range.</p></section>
+
+          <section className="panel"><div className="section-heading-row"><div><h2>Admin-style settings under test</h2><p className="muted small">Same options and order as Admin, but simulated historically with one shared portfolio.</p></div><span className="badge">No Admin changes</span></div><div className="form-grid backtest-grid"><Field label="Timeframe"><select value={form.timeframe} onChange={(e) => patch({ timeframe: e.target.value as Timeframe })}><option>1Min</option><option>5Min</option><option>15Min</option><option>30Min</option><option>1Hour</option></select></Field><Field label="Grader profile"><select value={form.gradeProfile} onChange={(e) => patch({ gradeProfile: e.target.value as GradeProfile })}><option>Pullback</option><option>Balanced</option><option>Breakout</option></select></Field><Field label="Direction filter"><select value={form.directionFilter} onChange={(e) => patch({ directionFilter: e.target.value as DirectionFilter, allowShorts: e.target.value === "Short" || e.target.value === "All" })}><option value="Long">Long Only</option><option value="All">Long + Short</option><option value="Short">Short Only</option></select></Field><Field label="Strategy engine"><select value={form.strategyEngine} onChange={(e) => patch({ strategyEngine: e.target.value as StrategyEngine })}><option>UniversalAdaptiveProV3</option><option>UniversalAdaptiveProV2</option><option>UniversalAdaptivePro</option><option>UniversalAdaptive</option><option>Manual</option></select></Field><Field label="Regime filter"><select value={form.regimeFilter} onChange={(e) => patch({ regimeFilter: e.target.value as RegimeFilter })}><option>Off</option><option>BlockLongBear</option><option>LongBullOnly</option><option>ShortBearOnly</option><option>LongBullShortBear</option></select></Field><Field label="Session filter"><select value={form.sessionFilter} onChange={(e) => patch({ sessionFilter: e.target.value as SessionFilter })}><option>MiddayAfternoon</option><option>RegularHours</option><option>Morning</option><option>Midday</option><option>Afternoon</option><option>All</option></select></Field><Field label="Setup type"><select value={form.setupTypeFilter} onChange={(e) => patch({ setupTypeFilter: e.target.value as SetupTypeFilter })}><option>AdaptiveBest</option><option>Pullback</option><option>Continuation</option><option>ContinuationPullback</option><option>ExcludeBreakoutChase</option><option>All</option></select></Field><Field label="Scan limit"><input type="number" value={form.scanLimit} onChange={(e) => patch({ scanLimit: num(e.target.value, form.scanLimit) })} /></Field><Field label="Min score"><input type="number" value={form.minScore} onChange={(e) => patch({ minScore: num(e.target.value, form.minScore) })} /></Field><Field label="Max score"><input type="number" value={form.maxScore} onChange={(e) => patch({ maxScore: num(e.target.value, form.maxScore) })} /></Field><Field label="Min R/R"><input type="number" step="0.1" value={form.minRR} onChange={(e) => patch({ minRR: num(e.target.value, form.minRR) })} /></Field><Field label="Target mode"><select value={form.targetMode} onChange={(e) => patch({ targetMode: e.target.value as TargetMode })}><option>FixedR</option><option>Structure</option><option>ATR</option></select></Field><Field label="Fixed target R"><input type="number" step="0.1" value={form.fixedTargetR} onChange={(e) => patch({ fixedTargetR: num(e.target.value, form.fixedTargetR) })} /></Field><Field label="Leader exit mode"><select value={form.leaderExitMode} onChange={(e) => patch({ leaderExitMode: e.target.value as LeaderExitMode })}><option>Fixed</option><option>Expanded</option><option>PartialRunner</option></select></Field><Field label="Risk model"><select value={form.riskModel} onChange={(e) => patch({ riskModel: e.target.value as RiskModel })}><option>Percent</option><option>Fixed</option></select></Field><Field label="Risk per trade %"><input type="number" step="0.1" value={form.riskPct} onChange={(e) => patch({ riskPct: num(e.target.value, form.riskPct) })} /></Field><Field label="Fixed risk $"><input type="number" value={form.fixedRiskDollars} onChange={(e) => patch({ fixedRiskDollars: num(e.target.value, form.fixedRiskDollars) })} /></Field><Field label="Max position %"><input type="number" step="1" value={form.maxPositionPct} onChange={(e) => patch({ maxPositionPct: num(e.target.value, form.maxPositionPct) })} /></Field><Field label="Max open trades"><input type="number" value={form.maxOpenTrades} onChange={(e) => patch({ maxOpenTrades: num(e.target.value, form.maxOpenTrades) })} /></Field><Field label="Max new trades/run"><input type="number" value={form.maxNewTradesPerRun} onChange={(e) => patch({ maxNewTradesPerRun: num(e.target.value, form.maxNewTradesPerRun) })} /></Field><Field label="Max total open risk %"><input type="number" step="0.5" value={form.maxTotalOpenRiskPct} onChange={(e) => patch({ maxTotalOpenRiskPct: num(e.target.value, form.maxTotalOpenRiskPct) })} /></Field><Field label="Cooldown minutes"><input type="number" value={form.cooldownMinutes} onChange={(e) => patch({ cooldownMinutes: num(e.target.value, form.cooldownMinutes) })} /></Field><Field label="Max bars to hold"><input type="number" value={form.maxBarsToHold} onChange={(e) => patch({ maxBarsToHold: num(e.target.value, form.maxBarsToHold) })} /></Field><Field label="Warmup bars"><input type="number" value={form.warmupBars} onChange={(e) => patch({ warmupBars: num(e.target.value, form.warmupBars) })} /></Field><Field label="Account type"><select value={form.accountType} onChange={(e) => patch({ accountType: e.target.value as RealisticAccountType, marginMultiplier: e.target.value === "Cash" ? 1 : form.marginMultiplier })}><option>Cash</option><option>Margin</option></select></Field><Field label="Buying power multiple"><input type="number" step="0.5" value={form.marginMultiplier} onChange={(e) => patch({ marginMultiplier: num(e.target.value, form.marginMultiplier) })} /></Field><Field label="Fractional shares"><select value={form.allowFractionalShares ? "yes" : "no"} onChange={(e) => patch({ allowFractionalShares: e.target.value === "yes" })}><option value="yes">Yes</option><option value="no">No, whole shares only</option></select></Field><Field label="Shorts"><select value={form.allowShorts ? "yes" : "no"} onChange={(e) => patch({ allowShorts: e.target.value === "yes", directionFilter: e.target.value === "yes" ? form.directionFilter : "Long" })}><option value="no">Blocked</option><option value="yes">Allowed</option></select></Field><Field label="Entry start ET"><input type="number" value={form.entryStart} onChange={(e) => patch({ entryStart: num(e.target.value, form.entryStart) })} /></Field><Field label="Entry end ET"><input type="number" value={form.entryEnd} onChange={(e) => patch({ entryEnd: num(e.target.value, form.entryEnd) })} /></Field><Field label="Max stale minutes"><input type="number" value={form.maxStaleMinutes} onChange={(e) => patch({ maxStaleMinutes: num(e.target.value, form.maxStaleMinutes) })} /></Field><Field label="Stale simulation"><select value={form.allowStaleSimulation ? "on" : "off"} onChange={(e) => patch({ allowStaleSimulation: e.target.value === "on" })}><option value="off">OFF: block stale candles</option><option value="on">ON: research test only</option></select></Field></div><p className="muted small">Entry window: {minutesToEt(form.entryStart)} to {minutesToEt(form.entryEnd)}. Research has the same setting options as Admin, but only Start date, End date, and Starting capital are Research-only.</p></section>
+
           <section className="panel"><div className="section-heading-row"><div><h2>Tracked symbols</h2><p className="muted small">The simulator scans from the top of this list, just like Admin.</p></div><span className="badge">{activeSymbols.length} active / {symbols.length} saved</span></div><textarea value={form.symbolsText} onChange={(e) => patch({ symbolsText: e.target.value })} /></section>
           <section className="panel"><h2>Progress</h2><div className="research-progress-track"><div style={{ width: `${progressPct}%` }} /></div><p className="status-line">{progress.total ? `${progress.current}/${progress.total} · ${progressPct}% · ${progress.message}` : progress.message}</p></section>
           {summary ? <section className="panel backtest-results"><h2>Backtest results</h2><p className="muted small">This is now a true shared-portfolio simulation. The trade count is capped by max new trades/run, max open trades, cooldown, and risk controls across the whole universe.</p><div className="mini-grid wide"><SmallMetric label="Symbols loaded" value={`${summary.symbolsWithCandles}/${summary.symbolsTested}`} helper={`${summary.candles.toLocaleString()} candles`} /><SmallMetric label="Timeline bars" value={summary.timelineBars.toLocaleString()} helper="Shared scan times" /><SmallMetric label="Trades" value={summary.trades.length} helper={`${summary.wins} wins · ${summary.losses} losses`} /><SmallMetric label="Win rate" value={pct(summary.winRate)} helper="All simulated trades" /><SmallMetric label="Total R" value={fmt(summary.totalR)} helper={`Avg ${fmt(summary.avgR)}R/trade`} /><SmallMetric label="Profit factor" value={displayPf(summary.profitFactor)} helper="Gross R ratio" /><SmallMetric label="Ending equity" value={`$${summary.endingEquity.toLocaleString()}`} helper={pct(summary.returnPct)} /><SmallMetric label="Max drawdown" value={`${fmt(summary.maxDrawdownR)}R`} helper={pct(summary.maxDrawdownPct)} /></div><div className="grid two diagnostic-grid"><div className="breakdown-card"><h3>Score buckets</h3><div className="table-wrap compact"><table><thead><tr><th>Bucket</th><th>Trades</th><th>Win rate</th><th>Avg R</th><th>Total R</th><th>PF</th></tr></thead><tbody>{summary.buckets.map((b) => <tr key={b.label}><td>{b.label}</td><td>{b.trades}</td><td>{pct(b.trades ? (b.wins / b.trades) * 100 : 0)}</td><td>{fmt(b.trades ? b.totalR / b.trades : 0)}</td><td>{fmt(b.totalR)}</td><td>{displayPf(profitFactor(b.positiveR, b.negativeR))}</td></tr>)}</tbody></table></div></div><div className="breakdown-card"><h3>Portfolio guardrails</h3><p className="muted small">Candidates seen: {summary.candidatesSeen.toLocaleString()}</p><p className="muted small">Skipped by max-open: {summary.skippedMaxOpen}</p><p className="muted small">Skipped by risk cap: {summary.skippedMaxRisk}</p><p className="muted small">Skipped by max-new/run: {summary.skippedMaxNewRun}</p>{summary.recentErrors.length ? <div className="warning-box">Some symbols failed:<br />{summary.recentErrors.join("\n")}</div> : <p className="muted small">No recent fetch errors.</p>}</div></div><div className="grid two diagnostic-grid"><div className="breakdown-card"><h3>Best symbols</h3><ResultTable rows={summary.best} /></div><div className="breakdown-card"><h3>Worst symbols</h3><ResultTable rows={summary.worst} /></div></div></section> : null}
